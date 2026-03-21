@@ -112,3 +112,50 @@ pub struct Priority {
     pub next: PlayerId,
     pub last_actor: Option<PlayerId>,
 }
+
+pub struct Card {
+    pub cost: Vec<ManaCost>,
+    pub kind: CardKind,
+}
+
+pub enum CardKind {
+    Land,
+    Creature,
+    Sorcery,
+    Artifact,
+    Enchantment,
+}
+
+pub enum ManaCost {
+    /// No mana cost, generally means the card can't be played normally.
+    ///
+    /// CR: 202.1b Some objects have no mana cost, e.g. lands.
+    Nonexistent,
+
+    /// A fixed number of mana of a specified color.
+    Fixed { color: ColorCost, quantity: u8 },
+
+    /// A variable amount of mana based on a query of the game state.
+    Query,
+
+    /// A variable amount of mana based on some user choice.
+    Input,
+}
+
+/// CR 202.2a The five colors.
+/// CR 202.2b Colorless mana.
+pub enum Color {
+    White,
+    Blue,
+    Black,
+    Red,
+    Green,
+    Colorless,
+}
+
+pub enum ColorCost {
+    Single(Color),
+    Hybrid(Color, Color),
+    Phyrexian(Color),
+    Snow,
+}
