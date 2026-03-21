@@ -8,14 +8,43 @@ pub struct State {
     pub phase: Phase,
 
     pub stack: Vec<()>,
+
+    pub priority: Option<Priority>,
 }
 
 impl State {
     pub fn tick(&mut self) -> Vec<Event> {
+        if let Some(Priority { next, last_actor }) = &mut self.priority {
+            let active = *next;
+
+            // If we've made our way back around to the last player to act (or the first
+            // player to get priority), then all players have passed priority and we are
+            // done with priority.
+            if Some(active) == *last_actor {
+                self.priority = None;
+                return vec![Event::EndPriority];
+            }
+
+            // Update the next player, and set last actor if this is the first player to
+            // get priority.
+            *next = (active + 1) % self.players.len();
+            last_actor.get_or_insert(active);
+
+            return vec![Event::Priority(active)];
+        }
+
         match &mut self.phase {
             Phase::Begin(step) => match step {
                 BeginStep::Untap => {
+                    // CR 501.1: Upkeep comes after untap.
                     *step = BeginStep::Upkeep;
+
+                    // CR: 503.1: At beginning of upkeep, active player gets priority.
+                    self.priority = Some(Priority {
+                        next: self.player,
+                        last_actor: None,
+                    });
+
                     return vec![
                         // CR 502.1: Phased-in permanents phase out, and phased-out permanents phase in.
                         Event::Phase,
@@ -69,8 +98,17 @@ pub enum BeginStep {
 
 #[derive(Debug)]
 pub enum Event {
-    // Untap events.
+    // General
+    Priority(PlayerId),
+    EndPriority,
+
+    // Untap
     Phase,
     DayNight,
     SelectUntap,
+}
+
+pub struct Priority {
+    pub next: PlayerId,
+    pub last_actor: Option<PlayerId>,
 }

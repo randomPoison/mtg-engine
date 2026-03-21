@@ -6,6 +6,7 @@ fn main() {
         player: 0,
         phase: Phase::Begin(mtg_engine::BeginStep::Untap),
         stack: vec![],
+        priority: None,
     };
 
     loop {
