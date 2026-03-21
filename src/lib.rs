@@ -1,5 +1,5 @@
 pub struct State {
-    pub players: Vec<()>,
+    pub players: Vec<Player>,
 
     /// The current player, i.e. whose turn it is.
     pub player: PlayerId,
@@ -82,6 +82,16 @@ impl State {
 
 type PlayerId = usize;
 
+#[derive(Default)]
+pub struct Player {
+    pub library: Vec<Card>,
+    pub hand: Vec<Card>,
+    pub battlefield: Vec<Card>,
+    pub graveyard: Vec<Card>,
+    pub exile: (),
+    pub command: Vec<Card>,
+}
+
 pub enum Phase {
     Begin(BeginStep),
     PreCombat,
@@ -114,6 +124,7 @@ pub struct Priority {
 }
 
 pub struct Card {
+    pub name: String,
     pub cost: Vec<ManaCost>,
     pub kind: CardKind,
 }

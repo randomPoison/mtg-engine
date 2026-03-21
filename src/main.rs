@@ -2,7 +2,7 @@ use mtg_engine::{Phase, State};
 
 fn main() {
     let mut state = State {
-        players: vec![(), ()],
+        players: vec![Default::default(), Default::default()],
         player: 0,
         phase: Phase::Begin(mtg_engine::BeginStep::Untap),
         stack: vec![],
