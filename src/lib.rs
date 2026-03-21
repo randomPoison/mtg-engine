@@ -16,7 +16,14 @@ impl State {
             Phase::Begin(step) => match step {
                 BeginStep::Untap => {
                     *step = BeginStep::Upkeep;
-                    return vec![Event::Phase, Event::DayNight, Event::SelectUntap];
+                    return vec![
+                        // CR 502.1: Phased-in permanents phase out, and phased-out permanents phase in.
+                        Event::Phase,
+                        // CR 502.2: Trigger day/night change.
+                        Event::DayNight,
+                        // CR 502.3: The active player determines which permanents untap.
+                        Event::SelectUntap,
+                    ];
                 }
                 BeginStep::Upkeep => {
                     *step = BeginStep::Draw;
