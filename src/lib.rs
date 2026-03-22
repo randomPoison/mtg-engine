@@ -109,10 +109,15 @@ pub enum BeginStep {
 #[derive(Debug)]
 pub enum Event {
     // General
+    // -------
+    /// A player has gained priority.
     Priority(PlayerId),
+
+    /// All players have passed priority and the priority rotation has ended.
     EndPriority,
 
     // Untap
+    // -----
     Phase,
     DayNight,
     SelectUntap,
@@ -126,12 +131,17 @@ pub struct Priority {
 pub struct Card {
     pub name: String,
     pub cost: Vec<ManaCost>,
-    pub kind: CardKind,
+    pub r#type: Vec<CardType>,
+
+    /// Some cards have an additional color indicator, separate from their mana
+    /// colors. These are generally cards with no mana cost or only colorless
+    /// mana cost.
+    pub color_indicator: Vec<Color>,
 }
 
-pub enum CardKind {
+pub enum CardType {
     Land,
-    Creature,
+    Creature { subtypes: Vec<String> },
     Sorcery,
     Artifact,
     Enchantment,
