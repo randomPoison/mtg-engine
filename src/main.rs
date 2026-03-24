@@ -1,18 +1,16 @@
-use mtg_engine::{Phase, State};
+use mtg_engine::{BeginStep, Frame, Phase, State, UntapEvent};
 
 fn main() {
     let mut state = State {
         players: vec![Default::default(), Default::default()],
         player: 0,
-        phase: Phase::Begin(mtg_engine::BeginStep::Untap),
-        stack: vec![],
-        priority: None,
+        stack: vec![Frame::Phase(Phase::Begin(BeginStep::Untap(
+            UntapEvent::Phasing,
+        )))],
     };
 
     loop {
-        let events = state.tick();
-        for event in events {
-            dbg!(event);
-        }
+        let event = state.tick();
+        dbg!(event);
     }
 }

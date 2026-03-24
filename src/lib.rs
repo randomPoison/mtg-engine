@@ -4,80 +4,117 @@ pub struct State {
     /// The current player, i.e. whose turn it is.
     pub player: PlayerId,
 
-    /// Phase of the current turn.
-    pub phase: Phase,
-
-    pub stack: Vec<()>,
-
-    pub priority: Option<Priority>,
+    pub stack: Vec<Frame>,
 }
 
 impl State {
-    pub fn tick(&mut self) -> Vec<Event> {
-        if let Some(Priority { next, last_actor }) = &mut self.priority {
-            let active = *next;
+    pub fn tick(&mut self) -> TickEvent {
+        match self.stack.pop().expect("Stack is not empty") {
+            Frame::Phase(phase) => match phase {
+                Phase::Begin(step) => match step {
+                    BeginStep::Untap(event) => match event {
+                        UntapEvent::Phasing => {
+                            // TODO: Trigger phasing.
 
-            // If we've made our way back around to the last player to act (or the first
-            // player to get priority), then all players have passed priority and we are
-            // done with priority.
-            if Some(active) == *last_actor {
-                self.priority = None;
-                return vec![Event::EndPriority];
-            }
+                            // CR 502.2: Day/night happens after phasing.
+                            self.stack.push(Frame::Phase(Phase::Begin(BeginStep::Untap(
+                                UntapEvent::DayNight,
+                            ))));
 
-            // Update the next player, and set last actor if this is the first player to
-            // get priority.
-            *next = (active + 1) % self.players.len();
-            last_actor.get_or_insert(active);
+                            return TickEvent::Phase;
+                        }
+                        UntapEvent::DayNight => {
+                            // TODO: Trigger day/night.
 
-            return vec![Event::Priority(active)];
-        }
+                            // CR 502.3: Untap comes after day/night.
+                            self.stack.push(Frame::Phase(Phase::Begin(BeginStep::Untap(
+                                UntapEvent::SelectUntap,
+                            ))));
 
-        match &mut self.phase {
-            Phase::Begin(step) => match step {
-                BeginStep::Untap => {
-                    // CR 501.1: Upkeep comes after untap.
-                    *step = BeginStep::Upkeep;
+                            return TickEvent::DayNight;
+                        }
+                        UntapEvent::SelectUntap => {
+                            // TODO: Determine if the current player needs to choose which
+                            // permanents to untap, and prompt them to do so if necessary.
 
-                    // CR: 503.1: At beginning of upkeep, active player gets priority.
-                    self.priority = Some(Priority {
-                        next: self.player,
-                        last_actor: None,
-                    });
+                            self.stack.push(Frame::Phase(Phase::Begin(BeginStep::Untap(
+                                UntapEvent::Untap,
+                            ))));
 
-                    return vec![
-                        // CR 502.1: Phased-in permanents phase out, and phased-out permanents phase in.
-                        Event::Phase,
-                        // CR 502.2: Trigger day/night change.
-                        Event::DayNight,
-                        // CR 502.3: The active player determines which permanents untap.
-                        Event::SelectUntap,
-                    ];
+                            return TickEvent::SelectUntap;
+                        }
+                        UntapEvent::Untap => {
+                            // TODO: Untap all selected permanents.
+
+                            self.stack
+                                .push(Frame::Phase(Phase::Begin(BeginStep::Upkeep)));
+
+                            return TickEvent::Untap(vec![]);
+                        }
+                    },
+
+                    BeginStep::Upkeep => {
+                        self.stack.push(Frame::Phase(Phase::Begin(BeginStep::Draw)));
+
+                        // CR: 503.1: At beginning of upkeep, active player gets priority.
+                        self.stack.push(Frame::Priority(Priority {
+                            next: self.player,
+                            last_actor: None,
+                        }));
+
+                        return TickEvent::Priority(self.player);
+                    }
+
+                    BeginStep::Draw => {
+                        // TODO: Draw a card.
+
+                        self.stack.push(Frame::Phase(Phase::PreCombat));
+
+                        return TickEvent::Draw;
+                    }
+                },
+                Phase::PreCombat => {
+                    self.stack.push(Frame::Phase(Phase::Combat));
                 }
-                BeginStep::Upkeep => {
-                    *step = BeginStep::Draw;
+                Phase::Combat => {
+                    self.stack.push(Frame::Phase(Phase::PostCombat));
                 }
-                BeginStep::Draw => {
-                    self.phase = Phase::PreCombat;
+                Phase::PostCombat => {
+                    self.stack.push(Frame::Phase(Phase::End));
+                }
+                Phase::End => {
+                    self.player = (self.player + 1) % self.players.len();
+                    self.stack.push(Frame::Phase(Phase::Begin(BeginStep::Untap(UntapEvent::Phasing))));
                 }
             },
-            Phase::PreCombat => {
-                self.phase = Phase::Combat;
-            }
-            Phase::Combat => {
-                self.phase = Phase::PostCombat;
-            }
-            Phase::PostCombat => {
-                self.phase = Phase::End;
-            }
-            Phase::End => {
-                self.player = (self.player + 1) % self.players.len();
-                self.phase = Phase::Begin(BeginStep::Untap);
+
+            Frame::Priority(mut priority) => {
+                let active = priority.next;
+
+                // If we've made our way back around to the last player to act (or the first
+                // player to get priority), then all players have passed priority and we are
+                // done with priority.
+                if Some(active) == priority.last_actor {
+                    return TickEvent::EndPriority;
+                }
+
+                // Update the next player, and set last actor if this is the first player to
+                // get priority.
+                priority.next = (active + 1) % self.players.len();
+                priority.last_actor.get_or_insert(active);
+
+                self.stack.push(Frame::Priority(priority));
+                return TickEvent::Priority(active);
             }
         }
 
-        vec![]
+        unreachable!("Got to end of `tick` without returning an event");
     }
+}
+
+pub enum Frame {
+    Phase(Phase),
+    Priority(Priority),
 }
 
 type PlayerId = usize;
@@ -101,13 +138,20 @@ pub enum Phase {
 }
 
 pub enum BeginStep {
-    Untap,
+    Untap(UntapEvent),
     Upkeep,
     Draw,
 }
 
+pub enum UntapEvent {
+    Phasing,
+    DayNight,
+    SelectUntap,
+    Untap,
+}
+
 #[derive(Debug)]
-pub enum Event {
+pub enum TickEvent {
     // General
     // -------
     /// A player has gained priority.
@@ -121,6 +165,9 @@ pub enum Event {
     Phase,
     DayNight,
     SelectUntap,
+    Untap(Vec<PermanentId>),
+
+    Draw,
 }
 
 pub struct Priority {
@@ -128,6 +175,7 @@ pub struct Priority {
     pub last_actor: Option<PlayerId>,
 }
 
+#[derive(Debug)]
 pub struct Card {
     pub name: String,
     pub cost: Vec<ManaCost>,
@@ -139,6 +187,7 @@ pub struct Card {
     pub color_indicator: Vec<Color>,
 }
 
+#[derive(Debug)]
 pub enum CardType {
     Land,
     Creature { subtypes: Vec<String> },
@@ -147,6 +196,7 @@ pub enum CardType {
     Enchantment,
 }
 
+#[derive(Debug)]
 pub enum ManaCost {
     /// No mana cost, generally means the card can't be played normally.
     ///
@@ -165,6 +215,7 @@ pub enum ManaCost {
 
 /// CR 202.2a The five colors.
 /// CR 202.2b Colorless mana.
+#[derive(Debug)]
 pub enum Color {
     White,
     Blue,
@@ -174,9 +225,12 @@ pub enum Color {
     Colorless,
 }
 
+#[derive(Debug)]
 pub enum ColorCost {
     Single(Color),
     Hybrid(Color, Color),
     Phyrexian(Color),
     Snow,
 }
+
+pub type PermanentId = ();
