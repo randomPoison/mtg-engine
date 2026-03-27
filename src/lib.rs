@@ -1,121 +1,111 @@
 pub struct State {
     pub players: Vec<Player>,
 
-    /// The current player, i.e. whose turn it is.
-    pub player: PlayerId,
+    /// The player whose turn is current in progress.
+    pub current_player: PlayerId,
 
-    pub stack: Vec<Frame>,
+    pub stack: Vec<Box<dyn StackFrame>>,
 }
 
 impl State {
+    pub fn new(players: Vec<Player>) -> Self {
+        // Initialize the current player to the last player, that way the first time we
+        // tick we wrap around the first player.
+        let current_player = players.len();
+
+        Self {
+            players,
+            current_player,
+            stack: vec![],
+        }
+    }
+
     pub fn tick(&mut self) -> TickEvent {
-        match self.stack.pop().expect("Stack is not empty") {
-            Frame::Phase(phase) => match phase {
-                Phase::Begin(step) => match step {
-                    BeginStep::Untap(event) => match event {
-                        UntapEvent::Phasing => {
-                            // TODO: Trigger phasing.
+        // Process the next frame on the stack, or move on to the next turn.
+        match self.stack.pop() {
+            Some(frame) => frame.eval(self),
 
-                            // CR 502.2: Day/night happens after phasing.
-                            self.stack.push(Frame::Phase(Phase::Begin(BeginStep::Untap(
-                                UntapEvent::DayNight,
-                            ))));
+            // No more frames on the stack, the current turn is done. Setup for the next
+            // turn and notify that the next turn is starting.
+            //
+            // NOTE: It might be nice to have the turn be just another frame on the stack,
+            // but determining the next player in the sequence depends on the game state
+            // (i.e. the list of living players and their ordering). Right now we don't
+            // provide the state when walking a sequence, so we handle the turn directly.
+            None => {
+                // TODO: Account for players that have been killed and so aren't part of the
+                // turn rotation. We may be able to handle this by just removing the dead
+                // players from the players list, but with the current setup that would mean
+                // that the player IDs change as players are knocked out.
+                let next = (self.current_player + 1) % self.players.len();
 
-                            return TickEvent::Phase;
-                        }
-                        UntapEvent::DayNight => {
-                            // TODO: Trigger day/night.
+                self.current_player = next;
+                self.push(SequenceFrame(Phase::Begin));
 
-                            // CR 502.3: Untap comes after day/night.
-                            self.stack.push(Frame::Phase(Phase::Begin(BeginStep::Untap(
-                                UntapEvent::SelectUntap,
-                            ))));
-
-                            return TickEvent::DayNight;
-                        }
-                        UntapEvent::SelectUntap => {
-                            // TODO: Determine if the current player needs to choose which
-                            // permanents to untap, and prompt them to do so if necessary.
-
-                            self.stack.push(Frame::Phase(Phase::Begin(BeginStep::Untap(
-                                UntapEvent::Untap,
-                            ))));
-
-                            return TickEvent::SelectUntap;
-                        }
-                        UntapEvent::Untap => {
-                            // TODO: Untap all selected permanents.
-
-                            self.stack
-                                .push(Frame::Phase(Phase::Begin(BeginStep::Upkeep)));
-
-                            return TickEvent::Untap(vec![]);
-                        }
-                    },
-
-                    BeginStep::Upkeep => {
-                        self.stack.push(Frame::Phase(Phase::Begin(BeginStep::Draw)));
-
-                        // CR: 503.1: At beginning of upkeep, active player gets priority.
-                        self.stack.push(Frame::Priority(Priority {
-                            next: self.player,
-                            last_actor: None,
-                        }));
-
-                        return TickEvent::Priority(self.player);
-                    }
-
-                    BeginStep::Draw => {
-                        // TODO: Draw a card.
-
-                        self.stack.push(Frame::Phase(Phase::PreCombat));
-
-                        return TickEvent::Draw;
-                    }
-                },
-                Phase::PreCombat => {
-                    self.stack.push(Frame::Phase(Phase::Combat));
-                }
-                Phase::Combat => {
-                    self.stack.push(Frame::Phase(Phase::PostCombat));
-                }
-                Phase::PostCombat => {
-                    self.stack.push(Frame::Phase(Phase::End));
-                }
-                Phase::End => {
-                    self.player = (self.player + 1) % self.players.len();
-                    self.stack.push(Frame::Phase(Phase::Begin(BeginStep::Untap(UntapEvent::Phasing))));
-                }
-            },
-
-            Frame::Priority(mut priority) => {
-                let active = priority.next;
-
-                // If we've made our way back around to the last player to act (or the first
-                // player to get priority), then all players have passed priority and we are
-                // done with priority.
-                if Some(active) == priority.last_actor {
-                    return TickEvent::EndPriority;
-                }
-
-                // Update the next player, and set last actor if this is the first player to
-                // get priority.
-                priority.next = (active + 1) % self.players.len();
-                priority.last_actor.get_or_insert(active);
-
-                self.stack.push(Frame::Priority(priority));
-                return TickEvent::Priority(active);
+                TickEvent::BeginTurn(next)
             }
         }
+    }
 
-        unreachable!("Got to end of `tick` without returning an event");
+    fn push(&mut self, frame: impl StackFrame) {
+        self.stack.push(Box::new(frame));
     }
 }
 
-pub enum Frame {
-    Phase(Phase),
-    Priority(Priority),
+pub trait StackFrame: 'static {
+    fn eval(&self, state: &mut State) -> TickEvent;
 }
+
+pub trait Sequence: Sized {
+    const FIRST: Self;
+    fn next(&self) -> Option<Self>;
+}
+
+pub struct SequenceFrame<T>(T);
+
+impl<T: Sequence + StackFrame> StackFrame for SequenceFrame<T> {
+    fn eval(&self, state: &mut State) -> TickEvent {
+        // First push the next step in the sequence onto the stack.
+        if let Some(next) = self.0.next() {
+            state.push(Self(next));
+        }
+
+        // Then allow the current step in the sequence to do whatever it wants.
+        self.0.eval(state)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Phase {
+    Begin,
+    PreCombat,
+    Combat,
+    PostCombat,
+    End,
+}
+
+impl Sequence for Phase {
+    const FIRST: Self = Self::Begin;
+
+    fn next(&self) -> Option<Phase> {
+        use Phase::*;
+        match self {
+            Begin => Some(PreCombat),
+            PreCombat => Some(Combat),
+            Combat => Some(PostCombat),
+            PostCombat => Some(End),
+            End => None,
+        }
+    }
+}
+
+impl StackFrame for Phase {
+    fn eval(&self, _state: &mut State) -> TickEvent {
+        TickEvent::BeginPhase(*self)
+    }
+}
+
+pub enum BeginFrame {}
 
 type PlayerId = usize;
 
@@ -129,20 +119,6 @@ pub struct Player {
     pub command: Vec<Card>,
 }
 
-pub enum Phase {
-    Begin(BeginStep),
-    PreCombat,
-    Combat,
-    PostCombat,
-    End,
-}
-
-pub enum BeginStep {
-    Untap(UntapEvent),
-    Upkeep,
-    Draw,
-}
-
 pub enum UntapEvent {
     Phasing,
     DayNight,
@@ -152,20 +128,17 @@ pub enum UntapEvent {
 
 #[derive(Debug)]
 pub enum TickEvent {
-    // General
-    // -------
     /// A player has gained priority.
     Priority(PlayerId),
 
     /// All players have passed priority and the priority rotation has ended.
     EndPriority,
 
-    // Untap
-    // -----
-    Phase,
-    DayNight,
-    SelectUntap,
-    Untap(Vec<PermanentId>),
+    BeginTurn(PlayerId),
+    EndTurn(PlayerId),
+
+    BeginPhase(Phase),
+    EndPhase(Phase),
 
     Draw,
 }

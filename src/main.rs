@@ -1,13 +1,7 @@
-use mtg_engine::{BeginStep, Frame, Phase, State, UntapEvent};
+use mtg_engine::State;
 
 fn main() {
-    let mut state = State {
-        players: vec![Default::default(), Default::default()],
-        player: 0,
-        stack: vec![Frame::Phase(Phase::Begin(BeginStep::Untap(
-            UntapEvent::Phasing,
-        )))],
-    };
+    let mut state = State::new(vec![Default::default(), Default::default()]);
 
     loop {
         let event = state.tick();
