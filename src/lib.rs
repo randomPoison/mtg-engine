@@ -11,7 +11,7 @@ impl State {
     pub fn new(players: Vec<Player>) -> Self {
         // Initialize the current player to the last player, that way the first time we
         // tick we wrap around the first player.
-        let current_player = players.len();
+        let current_player = players.len() - 1;
 
         Self {
             players,
@@ -21,57 +21,110 @@ impl State {
     }
 
     pub fn tick(&mut self) -> TickEvent {
-        // Process the next frame on the stack, or move on to the next turn.
-        match self.stack.pop() {
-            Some(frame) => frame.eval(self),
-
-            // No more frames on the stack, the current turn is done. Setup for the next
-            // turn and notify that the next turn is starting.
-            //
-            // NOTE: It might be nice to have the turn be just another frame on the stack,
-            // but determining the next player in the sequence depends on the game state
-            // (i.e. the list of living players and their ordering). Right now we don't
-            // provide the state when walking a sequence, so we handle the turn directly.
-            None => {
-                // TODO: Account for players that have been killed and so aren't part of the
-                // turn rotation. We may be able to handle this by just removing the dead
-                // players from the players list, but with the current setup that would mean
-                // that the player IDs change as players are knocked out.
-                let next = (self.current_player + 1) % self.players.len();
-
-                self.current_player = next;
-                self.push(SequenceFrame(Phase::Begin));
-
-                TickEvent::BeginTurn(next)
+        // Process frames on the stack until we evaluate one that emits an event, or
+        // until we empty the stack.
+        while let Some(frame) = self.stack.pop() {
+            if let Some(event) = frame.eval(self) {
+                return event;
             }
         }
+
+        // No more frames on the stack, the current turn is done. Setup for the next
+        // turn and notify that the next turn is starting.
+        //
+        // NOTE: It might be nice to have the turn be just another frame on the stack,
+        // but determining the next player in the sequence depends on the game state
+        // (i.e. the list of living players and their ordering). Right now we don't
+        // provide the state when walking a sequence, so we handle the turn directly.
+        //
+        // TODO: Account for players that have been killed and so aren't part of the
+        // turn rotation. We may be able to handle this by just removing the dead
+        // players from the players list, but with the current setup that would mean
+        // that the player IDs change as players are knocked out.
+        let next = (self.current_player + 1) % self.players.len();
+
+        self.current_player = next;
+        self.push_sequence::<Phase>();
+
+        TickEvent::BeginTurn(next)
     }
 
     fn push(&mut self, frame: impl StackFrame) {
         self.stack.push(Box::new(frame));
     }
+
+    fn push_sequence<T: Sequence + StackFrame + Copy>(&mut self) {
+        self.push(SequenceFrame::<T>::begin());
+    }
 }
 
 pub trait StackFrame: 'static {
-    fn eval(&self, state: &mut State) -> TickEvent;
+    fn eval(&self, state: &mut State) -> Option<TickEvent>;
 }
 
 pub trait Sequence: Sized {
     const FIRST: Self;
+
     fn next(&self) -> Option<Self>;
+
+    fn begin_event(&self) -> Option<TickEvent> {
+        None
+    }
+
+    fn end_event(&self) -> Option<TickEvent> {
+        None
+    }
 }
 
-pub struct SequenceFrame<T>(T);
+pub struct SequenceFrame<T> {
+    seq: T,
+    step: SequenceStep,
+}
 
-impl<T: Sequence + StackFrame> StackFrame for SequenceFrame<T> {
-    fn eval(&self, state: &mut State) -> TickEvent {
-        // First push the next step in the sequence onto the stack.
-        if let Some(next) = self.0.next() {
-            state.push(Self(next));
+pub enum SequenceStep {
+    Begin,
+    Eval,
+    End,
+}
+
+impl<T: Sequence> SequenceFrame<T> {
+    pub fn begin() -> Self {
+        Self {
+            seq: T::FIRST,
+            step: SequenceStep::Begin,
         }
+    }
+}
 
-        // Then allow the current step in the sequence to do whatever it wants.
-        self.0.eval(state)
+impl<T: Sequence + StackFrame + Copy> StackFrame for SequenceFrame<T> {
+    fn eval(&self, state: &mut State) -> Option<TickEvent> {
+        match self.step {
+            SequenceStep::Begin => {
+                state.push(SequenceFrame {
+                    seq: self.seq,
+                    step: SequenceStep::Eval,
+                });
+                self.seq.begin_event()
+            }
+
+            SequenceStep::Eval => {
+                state.push(SequenceFrame {
+                    seq: self.seq,
+                    step: SequenceStep::End,
+                });
+                self.seq.eval(state)
+            }
+
+            SequenceStep::End => {
+                if let Some(next) = self.seq.next() {
+                    state.push(SequenceFrame {
+                        seq: next,
+                        step: SequenceStep::Begin,
+                    });
+                }
+                self.seq.end_event()
+            }
+        }
     }
 }
 
@@ -97,15 +150,80 @@ impl Sequence for Phase {
             End => None,
         }
     }
-}
 
-impl StackFrame for Phase {
-    fn eval(&self, _state: &mut State) -> TickEvent {
-        TickEvent::BeginPhase(*self)
+    fn begin_event(&self) -> Option<TickEvent> {
+        Some(TickEvent::BeginPhase(*self))
+    }
+
+    fn end_event(&self) -> Option<TickEvent> {
+        Some(TickEvent::EndPhase(*self))
     }
 }
 
-pub enum BeginFrame {}
+impl StackFrame for Phase {
+    fn eval(&self, state: &mut State) -> Option<TickEvent> {
+        match self {
+            Phase::Begin => {
+                state.push_sequence::<BeginStep>();
+            }
+            Phase::PreCombat => todo!(),
+            Phase::Combat => todo!(),
+            Phase::PostCombat => todo!(),
+            Phase::End => todo!(),
+        }
+
+        None
+        // // The Phase frame doesn't really have a corresponding event. Its
+        // // purpose is to push the sequence for the current phases steps, and
+        // // then SequenceFrame handles returning the begin/end events for the
+        // // step. That means that we don't really want to return an event here,
+        // // and perhaps that `tick` should be a loop that keeps evaluating stack
+        // // frames until hitting one that need to return an event?
+        // todo!("What event should Phase return?")
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum BeginStep {
+    Untap,
+    Upkeep,
+    Draw,
+}
+
+impl Sequence for BeginStep {
+    const FIRST: Self = Self::Untap;
+
+    fn next(&self) -> Option<Self> {
+        use BeginStep::*;
+        match self {
+            Untap => Some(Upkeep),
+            Upkeep => Some(Draw),
+            Draw => None,
+        }
+    }
+
+    fn begin_event(&self) -> Option<TickEvent> {
+        Some(TickEvent::BeginBegin)
+    }
+
+    fn end_event(&self) -> Option<TickEvent> {
+        Some(TickEvent::EndBegin)
+    }
+}
+
+impl StackFrame for BeginStep {
+    fn eval(&self, state: &mut State) -> Option<TickEvent> {
+        match self {
+            BeginStep::Untap => {
+                state.push_sequence::<UntapEvent>();
+            }
+            BeginStep::Upkeep => todo!(),
+            BeginStep::Draw => todo!(),
+        }
+
+        None
+    }
+}
 
 type PlayerId = usize;
 
@@ -119,11 +237,37 @@ pub struct Player {
     pub command: Vec<Card>,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum UntapEvent {
     Phasing,
     DayNight,
     SelectUntap,
     Untap,
+}
+
+impl Sequence for UntapEvent {
+    const FIRST: Self = Self::Phasing;
+
+    fn next(&self) -> Option<Self> {
+        use UntapEvent::*;
+        match self {
+            Phasing => Some(DayNight),
+            DayNight => Some(SelectUntap),
+            SelectUntap => Some(Untap),
+            Untap => None,
+        }
+    }
+}
+
+impl StackFrame for UntapEvent {
+    fn eval(&self, _state: &mut State) -> Option<TickEvent> {
+        match self {
+            UntapEvent::Phasing => None,
+            UntapEvent::DayNight => None,
+            UntapEvent::SelectUntap => Some(TickEvent::SelectUntap),
+            UntapEvent::Untap => Some(TickEvent::Untap),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -139,6 +283,13 @@ pub enum TickEvent {
 
     BeginPhase(Phase),
     EndPhase(Phase),
+
+    // Begin phase, begin step.
+    BeginBegin,
+    EndBegin,
+
+    SelectUntap,
+    Untap,
 
     Draw,
 }
