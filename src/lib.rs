@@ -194,6 +194,14 @@ impl Sequence for BeginStep {
             Draw => None,
         }
     }
+
+    fn begin_event(&self) -> Option<TickEvent> {
+        Some(TickEvent::BeginBeginStep(*self))
+    }
+
+    fn end_event(&self) -> Option<TickEvent> {
+        Some(TickEvent::EndBeginStep(*self))
+    }
 }
 
 impl StackFrame for BeginStep {
@@ -268,6 +276,9 @@ pub enum TickEvent {
 
     BeginPhase(Phase),
     EndPhase(Phase),
+
+    BeginBeginStep(BeginStep),
+    EndBeginStep(BeginStep),
 
     SelectUntap,
     Untap,
