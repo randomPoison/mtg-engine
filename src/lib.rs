@@ -173,13 +173,6 @@ impl StackFrame for Phase {
         }
 
         None
-        // // The Phase frame doesn't really have a corresponding event. Its
-        // // purpose is to push the sequence for the current phases steps, and
-        // // then SequenceFrame handles returning the begin/end events for the
-        // // step. That means that we don't really want to return an event here,
-        // // and perhaps that `tick` should be a loop that keeps evaluating stack
-        // // frames until hitting one that need to return an event?
-        // todo!("What event should Phase return?")
     }
 }
 
@@ -200,14 +193,6 @@ impl Sequence for BeginStep {
             Upkeep => Some(Draw),
             Draw => None,
         }
-    }
-
-    fn begin_event(&self) -> Option<TickEvent> {
-        Some(TickEvent::BeginBegin)
-    }
-
-    fn end_event(&self) -> Option<TickEvent> {
-        Some(TickEvent::EndBegin)
     }
 }
 
@@ -283,10 +268,6 @@ pub enum TickEvent {
 
     BeginPhase(Phase),
     EndPhase(Phase),
-
-    // Begin phase, begin step.
-    BeginBegin,
-    EndBegin,
 
     SelectUntap,
     Untap,
