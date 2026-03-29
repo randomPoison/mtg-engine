@@ -214,7 +214,10 @@ impl StackFrame for BeginStep {
             BeginStep::Untap => {
                 state.push_sequence::<UntapEvent>();
             }
-            BeginStep::Upkeep => todo!(),
+            BeginStep::Upkeep => state.push(Priority {
+                next: state.current_player,
+                last_actor: None,
+            }),
             BeginStep::Draw => todo!(),
         }
 
@@ -281,6 +284,27 @@ pub enum TickEvent {
 pub struct Priority {
     pub next: PlayerId,
     pub last_actor: Option<PlayerId>,
+}
+
+impl StackFrame for Priority {
+    fn eval(&self, state: &mut State) -> Option<TickEvent> {
+        let active = self.next;
+
+        // If we've made our way back around to the last player to act (or the first
+        // player to get priority), then all players have passed priority and we are
+        // done with priority.
+        if Some(active) == self.last_actor {
+            return Some(TickEvent::EndPriority);
+        }
+
+        // Update the next player, and set last actor if this is the first player to
+        // get priority.
+        let next = (active + 1) % state.players.len();
+        let last_actor = self.last_actor.clone().or(Some(active));
+        state.push(Priority { next, last_actor });
+
+        Some(TickEvent::Priority(active))
+    }
 }
 
 pub type PermanentId = ();
