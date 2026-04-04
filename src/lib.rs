@@ -173,7 +173,7 @@ impl StackFrame for Phase {
             Phase::PreCombat => state.push(MainPhase),
             Phase::Combat => state.push_sequence::<CombatStep>(),
             Phase::PostCombat => state.push(MainPhase),
-            Phase::End => todo!(),
+            Phase::End => state.push_sequence::<EndStep>(),
         }
 
         None
@@ -306,6 +306,30 @@ impl StackFrame for CombatStep {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum EndStep {
+    End,
+    Cleanup,
+}
+
+impl Sequence for EndStep {
+    const FIRST: Self = Self::End;
+
+    fn next(&self) -> Option<Self> {
+        use EndStep::*;
+        match self {
+            End => Some(Cleanup),
+            Cleanup => None,
+        }
+    }
+}
+
+impl StackFrame for EndStep {
+    fn eval(&self, _state: &mut State) -> Option<TickEvent> {
+        Some(TickEvent::EndStep(*self))
+    }
+}
+
 #[derive(Debug)]
 pub enum TickEvent {
     /// A player has gained priority.
@@ -329,6 +353,8 @@ pub enum TickEvent {
     Draw,
 
     CombatStep(CombatStep),
+
+    EndStep(EndStep),
 }
 
 pub struct Priority {
