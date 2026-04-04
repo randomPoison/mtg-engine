@@ -218,7 +218,13 @@ impl StackFrame for BeginStep {
                 next: state.current_player,
                 last_actor: None,
             }),
-            BeginStep::Draw => todo!(),
+            BeginStep::Draw => {
+                state.push(Priority {
+                    next: state.current_player,
+                    last_actor: None,
+                });
+                return Some(TickEvent::Draw);
+            }
         }
 
         None
@@ -257,6 +263,8 @@ impl StackFrame for UntapEvent {
         }
     }
 }
+
+pub struct MainPhase;
 
 #[derive(Debug)]
 pub enum TickEvent {
