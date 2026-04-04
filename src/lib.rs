@@ -171,7 +171,7 @@ impl StackFrame for Phase {
                 state.push_sequence::<BeginStep>();
             }
             Phase::PreCombat => state.push(MainPhase),
-            Phase::Combat => todo!(),
+            Phase::Combat => state.push_sequence::<CombatStep>(),
             Phase::PostCombat => state.push(MainPhase),
             Phase::End => todo!(),
         }
@@ -276,6 +276,36 @@ impl StackFrame for MainPhase {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum CombatStep {
+    Begin,
+    DeclareAttackers,
+    DeclareBlockers,
+    CombatDamage,
+    End,
+}
+
+impl Sequence for CombatStep {
+    const FIRST: Self = Self::Begin;
+
+    fn next(&self) -> Option<Self> {
+        use CombatStep::*;
+        match self {
+            Begin => Some(DeclareAttackers),
+            DeclareAttackers => Some(DeclareBlockers),
+            DeclareBlockers => Some(CombatDamage),
+            CombatDamage => Some(End),
+            End => None,
+        }
+    }
+}
+
+impl StackFrame for CombatStep {
+    fn eval(&self, _state: &mut State) -> Option<TickEvent> {
+        Some(TickEvent::CombatStep(*self))
+    }
+}
+
 #[derive(Debug)]
 pub enum TickEvent {
     /// A player has gained priority.
@@ -297,6 +327,8 @@ pub enum TickEvent {
     Untap,
 
     Draw,
+
+    CombatStep(CombatStep),
 }
 
 pub struct Priority {
