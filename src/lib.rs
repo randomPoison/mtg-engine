@@ -170,9 +170,9 @@ impl StackFrame for Phase {
             Phase::Begin => {
                 state.push_sequence::<BeginStep>();
             }
-            Phase::PreCombat => todo!(),
+            Phase::PreCombat => state.push(MainPhase),
             Phase::Combat => todo!(),
-            Phase::PostCombat => todo!(),
+            Phase::PostCombat => state.push(MainPhase),
             Phase::End => todo!(),
         }
 
@@ -265,6 +265,16 @@ impl StackFrame for UntapEvent {
 }
 
 pub struct MainPhase;
+
+impl StackFrame for MainPhase {
+    fn eval(&self, state: &mut State) -> Option<TickEvent> {
+        state.push(Priority {
+            next: state.current_player,
+            last_actor: None,
+        });
+        None
+    }
+}
 
 #[derive(Debug)]
 pub enum TickEvent {
