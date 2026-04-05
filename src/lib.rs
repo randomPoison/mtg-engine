@@ -167,9 +167,7 @@ impl Sequence for Phase {
 impl StackFrame for Phase {
     fn eval(&self, state: &mut State) -> Option<TickEvent> {
         match self {
-            Phase::Begin => {
-                state.push_sequence::<BeginStep>();
-            }
+            Phase::Begin => state.push_sequence::<BeginStep>(),
             Phase::PreCombat => state.push(MainPhase),
             Phase::Combat => state.push_sequence::<CombatStep>(),
             Phase::PostCombat => state.push(MainPhase),
