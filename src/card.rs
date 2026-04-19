@@ -8,6 +8,8 @@ pub struct Card {
     /// colors. These are generally cards with no mana cost or only colorless
     /// mana cost.
     pub color_indicator: Vec<Color>,
+
+    pub activated_abilities: ActivatedAbility,
 }
 
 #[derive(Debug)]
@@ -54,4 +56,29 @@ pub enum ColorCost {
     Hybrid(Color, Color),
     Phyrexian(Color),
     Snow,
+}
+
+#[derive(Debug)]
+pub struct ActivatedAbility {
+    pub cost: Vec<AbilityCost>,
+    pub effect: AbilityEffect,
+}
+
+#[derive(Debug)]
+pub enum AbilityCost {
+    Mana(ManaCost),
+    Tap(TargetCost),
+}
+
+#[derive(Debug)]
+pub enum TargetCost {
+    TargetSelf,
+}
+
+#[derive(Debug)]
+pub enum AbilityEffect {
+    GetMana {
+        color: Color,
+        quantity: u8,
+    }
 }

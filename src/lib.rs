@@ -1,6 +1,7 @@
 use card::Card;
 
 pub mod card;
+pub mod cards;
 
 pub struct State {
     pub players: Vec<Player>,
