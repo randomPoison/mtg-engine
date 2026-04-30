@@ -1,9 +1,13 @@
-use card::Card;
+use crate::{
+    card::{Card, CardDef},
+    cards::summon_cards_into_existence,
+};
 
 pub mod card;
 pub mod cards;
 
 pub struct State {
+    pub card_defs: Vec<CardDef>,
     pub players: Vec<Player>,
 
     /// The player whose turn is current in progress.
@@ -19,6 +23,7 @@ impl State {
         let current_player = players.len() - 1;
 
         Self {
+            card_defs: summon_cards_into_existence(),
             players,
             current_player,
             stack: vec![],

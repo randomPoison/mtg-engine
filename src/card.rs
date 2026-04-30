@@ -1,5 +1,6 @@
+/// Like the info that appears on the card, the info about the card used in the game.
 #[derive(Debug)]
-pub struct Card {
+pub struct CardDef {
     pub name: String,
     pub cost: Vec<ManaCost>,
     pub r#type: Vec<CardType>,
@@ -11,6 +12,10 @@ pub struct Card {
 
     pub activated_abilities: ActivatedAbility,
 }
+
+/// A card as it appears in like the library or the hand. The number is just the
+/// idex in the global card def list, ez
+pub struct Card(pub usize);
 
 #[derive(Debug)]
 pub enum CardType {
@@ -77,8 +82,5 @@ pub enum TargetCost {
 
 #[derive(Debug)]
 pub enum AbilityEffect {
-    GetMana {
-        color: Color,
-        quantity: u8,
-    }
+    GetMana { color: Color, quantity: u8 },
 }

@@ -1,9 +1,9 @@
 use crate::card::{
-    AbilityCost, AbilityEffect, ActivatedAbility, Card, CardType, Color, ManaCost, TargetCost,
+    AbilityCost, AbilityEffect, ActivatedAbility, CardDef, CardType, Color, ManaCost, TargetCost,
 };
 
-pub fn cards() -> Vec<Card> {
-    vec![Card {
+pub fn summon_cards_into_existence() -> Vec<CardDef> {
+    vec![CardDef {
         name: "Mountain".into(),
         cost: vec![ManaCost::Nonexistent],
         r#type: vec![CardType::Land],
