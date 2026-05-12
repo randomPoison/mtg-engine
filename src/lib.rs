@@ -1,7 +1,4 @@
-use crate::{
-    card::{Card, CardDef},
-    cards::summon_cards_into_existence,
-};
+use crate::card::{Card, CardDef, CardDefId, CardGen, CardId, summon_cards_into_existence};
 
 pub mod card;
 pub mod cards;
@@ -12,20 +9,45 @@ pub struct State {
 
     /// The player whose turn is current in progress.
     pub current_player: PlayerId,
+    pub current_phase: Phase,
 
     pub stack: Vec<Box<dyn StackFrame>>,
 }
 
 impl State {
-    pub fn new(players: Vec<Player>) -> Self {
+    pub fn new(players: Vec<PlayerConfig>) -> Self {
         // Initialize the current player to the last player, that way the first time we
-        // tick we wrap around the first player.
+        // tick we wrap around to the first player.
         let current_player = players.len() - 1;
 
+        let card_defs = summon_cards_into_existence();
+
+        // This is a mildly janky way of generating the unique IDs for cards, since we
+        // have to sift through the initial hands and libraries for all players to
+        // generate the IDs. This also doesn't tie cards to the player that owns them.
+        // We could probably just build a map for that info, though.
+        let mut card_gen = CardGen::new();
+        let mut reify_cards =
+            |dids: Vec<_>| dids.into_iter().map(|did| card_gen.next(did)).collect();
+
+        let players = players
+            .into_iter()
+            .map(|PlayerConfig { library, hand }| {
+                let library = reify_cards(library);
+                let hand = reify_cards(hand);
+                Player {
+                    library,
+                    hand,
+                    ..Default::default()
+                }
+            })
+            .collect();
+
         Self {
-            card_defs: summon_cards_into_existence(),
+            card_defs,
             players,
             current_player,
+            current_phase: Phase::Begin,
             stack: vec![],
         }
     }
@@ -138,7 +160,7 @@ impl<T: Sequence + StackFrame + Copy> StackFrame for SequenceFrame<T> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
     Begin,
     PreCombat,
@@ -172,6 +194,7 @@ impl Sequence for Phase {
 
 impl StackFrame for Phase {
     fn eval(&self, state: &mut State) -> Option<TickEvent> {
+        state.current_phase = *self;
         match self {
             Phase::Begin => state.push_sequence::<BeginStep>(),
             Phase::PreCombat => state.push(MainPhase),
@@ -223,11 +246,21 @@ impl StackFrame for BeginStep {
                 last_actor: None,
             }),
             BeginStep::Draw => {
+                let player = &mut state.players[state.current_player];
+
+                // Draw a card from the current player's library.
+                let Some(draw) = player.library.pop() else {
+                    todo!("Player ran out of cards to draw, they lose the game");
+                };
+                let draw_id = draw.id();
+                player.hand.push(draw);
+
                 state.push(Priority {
                     next: state.current_player,
                     last_actor: None,
                 });
-                return Some(TickEvent::Draw);
+
+                return Some(TickEvent::Draw(draw_id));
             }
         }
 
@@ -354,7 +387,7 @@ pub enum TickEvent {
     SelectUntap,
     Untap,
 
-    Draw,
+    Draw(CardId),
 
     CombatStep(CombatStep),
 
@@ -393,10 +426,17 @@ type PlayerId = usize;
 
 #[derive(Default)]
 pub struct Player {
+    /// Cards in the player's library, listed from bottom to top.
     pub library: Vec<Card>,
     pub hand: Vec<Card>,
     pub battlefield: Vec<Card>,
     pub graveyard: Vec<Card>,
     pub exile: (),
     pub command: Vec<Card>,
+}
+
+#[derive(Default)]
+pub struct PlayerConfig {
+    pub library: Vec<CardDefId>,
+    pub hand: Vec<CardDefId>,
 }

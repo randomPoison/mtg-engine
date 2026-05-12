@@ -1,19 +1,24 @@
-use mtg_engine::{Player, State, card::Card};
+use mtg_engine::{Phase, PlayerConfig, State, TickEvent, card::CardDefId};
 
 fn main() {
-    // constructor fn because i dont want `Card` to be `Clone`
-    fn library() -> Vec<Card> {
+    fn library() -> Vec<CardDefId> {
         // Just 5 mountains ig
         // NOt even tgoing to bother with names
-        vec![Card(0), Card(0), Card(0), Card(0), Card(0)]
+        vec![
+            CardDefId(0),
+            CardDefId(0),
+            CardDefId(0),
+            CardDefId(0),
+            CardDefId(0),
+        ]
     }
 
     let mut state = State::new(vec![
-        Player {
+        PlayerConfig {
             library: library(),
             ..Default::default()
         },
-        Player {
+        PlayerConfig {
             library: library(),
             ..Default::default()
         },
@@ -21,6 +26,22 @@ fn main() {
 
     loop {
         let event = state.tick();
-        dbg!(event);
+        println!("event: {event:?}");
+        match event {
+            TickEvent::Priority(_) => if state.current_phase == Phase::PreCombat {},
+
+            TickEvent::EndPriority => {}
+            TickEvent::BeginTurn(_) => {}
+            TickEvent::EndTurn(_) => {}
+            TickEvent::BeginPhase(_phase) => {}
+            TickEvent::EndPhase(_phase) => {}
+            TickEvent::BeginBeginStep(_begin_step) => {}
+            TickEvent::EndBeginStep(_begin_step) => {}
+            TickEvent::SelectUntap => {}
+            TickEvent::Untap => {}
+            TickEvent::Draw(_draw) => {}
+            TickEvent::CombatStep(_combat_step) => {}
+            TickEvent::EndStep(_end_step) => {}
+        }
     }
 }

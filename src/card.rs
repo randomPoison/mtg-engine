@@ -1,3 +1,8 @@
+pub use cards::summon_cards_into_existence;
+
+#[path = "./cards.rs"]
+mod cards;
+
 /// Like the info that appears on the card, the info about the card used in the game.
 #[derive(Debug)]
 pub struct CardDef {
@@ -13,9 +18,49 @@ pub struct CardDef {
     pub activated_abilities: ActivatedAbility,
 }
 
-/// A card as it appears in like the library or the hand. The number is just the
-/// idex in the global card def list, ez
-pub struct Card(pub usize);
+/// Just the index of the card definition within the global card definition list.
+#[derive(Debug, Clone, Copy)]
+pub struct CardDefId(pub usize);
+
+/// Unique identifier for a card in play.
+#[derive(Debug, Clone, Copy)]
+pub struct CardId(pub u32);
+
+/// A card as it appears in like the library or the hand.
+///
+/// Does not implement [`Clone`] so that we can use ownership to model the
+/// uniqueness of each card, ensuring we never accidentally duplicate the card.
+#[derive(Debug)]
+pub struct Card(CardId, CardDefId);
+
+impl Card {
+    pub fn id(&self) -> CardId {
+        self.0
+    }
+
+    pub fn def(&self) -> CardDefId {
+        self.1
+    }
+}
+
+/// Generator for [`Card`] objects, ensuring that each card gets a unique ID.
+///
+/// Currently nothing prevents us from using multiple `CardGen`s to generate
+/// multiple [`Card`] objects with the same ID. So be sure to only make one
+/// `CardGen` per game state!
+pub struct CardGen(u32);
+
+impl CardGen {
+    pub fn new() -> Self {
+        Self(0)
+    }
+
+    pub fn next(&mut self, def: CardDefId) -> Card {
+        let id = self.0;
+        self.0 += 1;
+        Card(CardId(id), def)
+    }
+}
 
 #[derive(Debug)]
 pub enum CardType {
