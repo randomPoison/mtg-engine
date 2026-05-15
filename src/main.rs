@@ -1,4 +1,4 @@
-use mtg_engine::{Phase, PlayerConfig, State, TickEvent, card::CardDefId};
+use mtg_engine::{Phase, PlayerAction, PlayerConfig, State, TickEvent, card::CardDefId};
 
 fn main() {
     fn library() -> Vec<CardDefId> {
@@ -26,9 +26,17 @@ fn main() {
 
     loop {
         let event = state.tick();
-        println!("event: {event:?}");
+        println!("turn: {}, event: {event:?}", state.current_player);
         match event {
-            TickEvent::Priority(_) => if state.current_phase == Phase::PreCombat {},
+            TickEvent::Priority(pid) => {
+                if pid == state.current_player && state.current_phase == Phase::PreCombat {
+                    // Have the current player play one of their cards.
+                    let card_id = state.players[state.current_player].hand[0].id();
+                    state
+                        .input(state.current_player, PlayerAction::PlayLand(card_id))
+                        .unwrap();
+                }
+            }
 
             TickEvent::EndPriority => {}
             TickEvent::BeginTurn(_) => {}
@@ -42,6 +50,7 @@ fn main() {
             TickEvent::Draw(_draw) => {}
             TickEvent::CombatStep(_combat_step) => {}
             TickEvent::EndStep(_end_step) => {}
+            TickEvent::PlayCard(_, _card_id) => {}
         }
     }
 }

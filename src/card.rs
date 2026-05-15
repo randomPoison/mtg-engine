@@ -19,11 +19,11 @@ pub struct CardDef {
 }
 
 /// Just the index of the card definition within the global card definition list.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CardDefId(pub usize);
 
 /// Unique identifier for a card in play.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CardId(pub u32);
 
 /// A card as it appears in like the library or the hand.
@@ -62,7 +62,7 @@ impl CardGen {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum CardType {
     Land,
     Creature { subtypes: Vec<String> },

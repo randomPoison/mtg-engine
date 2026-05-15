@@ -1,17 +1,35 @@
-use crate::card::{Card, CardDef, CardDefId, CardGen, CardId, summon_cards_into_existence};
+use crate::card::{
+    Card, CardDef, CardDefId, CardGen, CardId, CardType, summon_cards_into_existence,
+};
 
 pub mod card;
 pub mod cards;
 
 pub struct State {
+    /// Global list of card definitions.
     pub card_defs: Vec<CardDef>,
+
+    /// State data for all players.
     pub players: Vec<Player>,
 
     /// The player whose turn is current in progress.
     pub current_player: PlayerId,
+
+    /// The phase of the current turn.
     pub current_phase: Phase,
 
-    pub stack: Vec<Box<dyn StackFrame>>,
+    /// The player who currently has priority, if any.
+    pub current_priority: Option<PlayerId>,
+
+    /// The state of the in-game stack (not to be confused with internal stack,
+    /// which is different).
+    pub game_stack: Vec<()>,
+
+    /// Internal state stack, which is, confusingly, different from the in-game stack.
+    pub state_stack: Vec<Box<dyn StackFrame>>,
+
+    /// Pending actions to be handled at the next tick.
+    pub actions: Vec<PendingAction>,
 }
 
 impl State {
@@ -48,14 +66,83 @@ impl State {
             players,
             current_player,
             current_phase: Phase::Begin,
-            stack: vec![],
+            state_stack: vec![],
+            actions: vec![],
+            current_priority: None,
+            game_stack: vec![],
         }
     }
 
     pub fn tick(&mut self) -> TickEvent {
+        // TODO: Ordering? Is the last element the one to do first? What does it
+        // mean if there are multiple pending actions? Multiple players acting
+        // at the same time? Wouldn't that require a priority shift, which
+        // implies a `tick` in between the actions?
+        if let Some(PendingAction {
+            player: pid,
+            action,
+        }) = self.actions.pop()
+        {
+            let player = self.players.get_mut(pid).expect("Invalid player ID");
+
+            match action {
+                PlayerAction::PlayLand(card_id) => {
+                    // Validity checks:
+                    //
+                    // - ✅ Are the player ID and card ID valid? Would be nice to not have to validity check that here,
+                    // - ✅ Does the player actually have the card in their hand?
+                    // - ✅ Is it actually a land?
+                    // - ✅ Is it the player's main phase?
+                    // - ✅ Does the player have priority?
+                    // - ✅ Is stack empty?
+                    // - Have they already played a land this turn? Only one by default
+                    //
+                    // Would be nice to not panic on invalid inputs, but w/e
+
+                    let card_index = player
+                        .hand
+                        .iter()
+                        .position(|card| card.id() == card_id)
+                        .expect("Invalid card ID");
+                    let card = &player.hand[card_index];
+                    let def = &self.card_defs[card.def().0];
+                    assert!(
+                        def.r#type.contains(&CardType::Land),
+                        "Trying to play a non-land card {card:?} as a land"
+                    );
+
+                    assert!(
+                        self.current_player == pid,
+                        "Can only play lands during your own turn",
+                    );
+                    assert!(
+                        self.current_phase.is_main(),
+                        "Can only play lands during your main phase",
+                    );
+                    assert_eq!(
+                        Some(pid),
+                        self.current_priority,
+                        "Can only play a land when you have priority",
+                    );
+                    assert!(
+                        self.game_stack.is_empty(),
+                        "Stack must be empty to play a land",
+                    );
+
+                    // TODO: Check if we've already played a land this turn.
+
+                    // All validity checks have passed, time to put the land on the field.
+                    let card = player.hand.remove(card_index);
+                    player.battlefield.push(card);
+
+                    return TickEvent::PlayCard(pid, card_id);
+                }
+            }
+        }
+
         // Process frames on the stack until we evaluate one that emits an event, or
         // until we empty the stack.
-        while let Some(frame) = self.stack.pop() {
+        while let Some(frame) = self.state_stack.pop() {
             if let Some(event) = frame.eval(self) {
                 return event;
             }
@@ -81,8 +168,16 @@ impl State {
         TickEvent::BeginTurn(next)
     }
 
+    /// Enqueues a player action to be processed at the next `tick`.
+    pub fn input(&mut self, player: PlayerId, action: PlayerAction) -> Result<(), ()> {
+        // TODO: Validate the input? Is it easy (or even possible) to validate
+        // the input now? Or are we going to have to validy check in `tick`?
+        self.actions.push(PendingAction { player, action });
+        Ok(())
+    }
+
     fn push(&mut self, frame: impl StackFrame) {
-        self.stack.push(Box::new(frame));
+        self.state_stack.push(Box::new(frame));
     }
 
     fn push_sequence<T: Sequence + StackFrame + Copy>(&mut self) {
@@ -167,6 +262,12 @@ pub enum Phase {
     Combat,
     PostCombat,
     End,
+}
+
+impl Phase {
+    pub fn is_main(self) -> bool {
+        matches!(self, Phase::PreCombat | Phase::PostCombat)
+    }
 }
 
 impl Sequence for Phase {
@@ -392,6 +493,9 @@ pub enum TickEvent {
     CombatStep(CombatStep),
 
     EndStep(EndStep),
+
+    /// A card entered the battlefield.
+    PlayCard(PlayerId, CardId),
 }
 
 pub struct Priority {
@@ -407,6 +511,7 @@ impl StackFrame for Priority {
         // player to get priority), then all players have passed priority and we are
         // done with priority.
         if Some(active) == self.last_actor {
+            state.current_priority = None;
             return Some(TickEvent::EndPriority);
         }
 
@@ -415,6 +520,8 @@ impl StackFrame for Priority {
         let next = (active + 1) % state.players.len();
         let last_actor = self.last_actor.clone().or(Some(active));
         state.push(Priority { next, last_actor });
+
+        state.current_priority = Some(active);
 
         Some(TickEvent::Priority(active))
     }
@@ -439,4 +546,13 @@ pub struct Player {
 pub struct PlayerConfig {
     pub library: Vec<CardDefId>,
     pub hand: Vec<CardDefId>,
+}
+
+pub enum PlayerAction {
+    PlayLand(CardId),
+}
+
+pub struct PendingAction {
+    pub player: PlayerId,
+    pub action: PlayerAction,
 }
