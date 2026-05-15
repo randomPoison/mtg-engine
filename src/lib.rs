@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use crate::card::{
     Card, CardDef, CardDefId, CardGen, CardId, CardType, summon_cards_into_existence,
 };
@@ -18,9 +20,6 @@ pub struct State {
     /// The phase of the current turn.
     pub current_phase: Phase,
 
-    /// The player who currently has priority, if any.
-    pub current_priority: Option<PlayerId>,
-
     /// The state of the in-game stack (not to be confused with internal stack,
     /// which is different).
     pub game_stack: Vec<()>,
@@ -28,7 +27,10 @@ pub struct State {
     /// Internal state stack, which is, confusingly, different from the in-game stack.
     pub state_stack: Vec<Box<dyn StackFrame>>,
 
-    /// Pending actions to be handled at the next tick.
+    /// Queue of pending actions, listed in reverse order.
+    ///
+    /// Last item is the next action to process, so we can `pop` elements to
+    /// process them in order.
     pub actions: Vec<PendingAction>,
 }
 
@@ -68,7 +70,6 @@ impl State {
             current_phase: Phase::Begin,
             state_stack: vec![],
             actions: vec![],
-            current_priority: None,
             game_stack: vec![],
         }
     }
@@ -84,6 +85,13 @@ impl State {
         }) = self.actions.pop()
         {
             let player = self.players.get_mut(pid).expect("Invalid player ID");
+
+            fn get_priority(state_stack: &mut [Box<dyn StackFrame>]) -> Option<&mut Priority> {
+                // TODO: The priority may not be the top frame, right?
+                state_stack
+                    .last_mut()
+                    .and_then(|f| (f as &mut dyn Any).downcast_mut())
+            }
 
             match action {
                 PlayerAction::PlayLand(card_id) => {
@@ -121,7 +129,7 @@ impl State {
                     );
                     assert_eq!(
                         Some(pid),
-                        self.current_priority,
+                        get_priority(&mut self.state_stack).map(|p| p.active),
                         "Can only play a land when you have priority",
                     );
                     assert!(
@@ -136,6 +144,34 @@ impl State {
                     player.battlefield.push(card);
 
                     return TickEvent::PlayCard(pid, card_id);
+                }
+
+                PlayerAction::PassPriority => {
+                    // Validity checks:
+                    //
+                    // - ✅ There has to be an active priority to pass priority.
+                    // - ✅ The passing player has to actually have priority.
+                    let priority = get_priority(&mut self.state_stack)
+                        .expect("Tried to pass priority when not priority?");
+                    assert_eq!(priority.active, pid, "Must have priority to pass");
+
+                    // OKAY we've confirmed that it's valid to pass priority rk, so let's actually do it.
+                    let active = priority.active;
+                    let next = (active + 1) % self.players.len();
+
+                    if Some(next) == priority.last_actor {
+                        // If we've made our way back around to the last player to act (or the first
+                        // player to get priority), then all players have passed priority and we are
+                        // done with priority.
+                        todo!(
+                            "Remove the priority frame? What if its not at the top of the stack?"
+                        );
+                    } else {
+                        // Update the next player, and set last actor if this is the first player to
+                        // get priority.
+                        priority.active = next;
+                        priority.last_actor.get_or_insert(active);
+                    }
                 }
             }
         }
@@ -172,7 +208,7 @@ impl State {
     pub fn input(&mut self, player: PlayerId, action: PlayerAction) -> Result<(), ()> {
         // TODO: Validate the input? Is it easy (or even possible) to validate
         // the input now? Or are we going to have to validy check in `tick`?
-        self.actions.push(PendingAction { player, action });
+        self.actions.insert(0, PendingAction { player, action });
         Ok(())
     }
 
@@ -185,7 +221,7 @@ impl State {
     }
 }
 
-pub trait StackFrame: 'static {
+pub trait StackFrame: 'static + Any {
     fn eval(&self, state: &mut State) -> Option<TickEvent>;
 }
 
@@ -343,7 +379,7 @@ impl StackFrame for BeginStep {
                 state.push_sequence::<UntapEvent>();
             }
             BeginStep::Upkeep => state.push(Priority {
-                next: state.current_player,
+                active: state.current_player,
                 last_actor: None,
             }),
             BeginStep::Draw => {
@@ -357,7 +393,7 @@ impl StackFrame for BeginStep {
                 player.hand.push(draw);
 
                 state.push(Priority {
-                    next: state.current_player,
+                    active: state.current_player,
                     last_actor: None,
                 });
 
@@ -407,7 +443,7 @@ pub struct MainPhase;
 impl StackFrame for MainPhase {
     fn eval(&self, state: &mut State) -> Option<TickEvent> {
         state.push(Priority {
-            next: state.current_player,
+            active: state.current_player,
             last_actor: None,
         });
         None
@@ -498,32 +534,18 @@ pub enum TickEvent {
     PlayCard(PlayerId, CardId),
 }
 
+#[derive(Clone)]
 pub struct Priority {
-    pub next: PlayerId,
+    pub active: PlayerId,
     pub last_actor: Option<PlayerId>,
 }
 
 impl StackFrame for Priority {
     fn eval(&self, state: &mut State) -> Option<TickEvent> {
-        let active = self.next;
-
-        // If we've made our way back around to the last player to act (or the first
-        // player to get priority), then all players have passed priority and we are
-        // done with priority.
-        if Some(active) == self.last_actor {
-            state.current_priority = None;
-            return Some(TickEvent::EndPriority);
-        }
-
-        // Update the next player, and set last actor if this is the first player to
-        // get priority.
-        let next = (active + 1) % state.players.len();
-        let last_actor = self.last_actor.clone().or(Some(active));
-        state.push(Priority { next, last_actor });
-
-        state.current_priority = Some(active);
-
-        Some(TickEvent::Priority(active))
+        // Nothing happens on tick, we have to wait for a player to pass
+        // priority or otherwise perform an action.
+        state.push(self.clone());
+        Some(TickEvent::Priority(self.active))
     }
 }
 
@@ -549,6 +571,7 @@ pub struct PlayerConfig {
 }
 
 pub enum PlayerAction {
+    PassPriority,
     PlayLand(CardId),
 }
 

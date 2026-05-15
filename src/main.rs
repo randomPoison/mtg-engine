@@ -30,11 +30,12 @@ fn main() {
         match event {
             TickEvent::Priority(pid) => {
                 if pid == state.current_player && state.current_phase == Phase::PreCombat {
-                    // Have the current player play one of their cards.
+                    // Have the current player play one of their cards, then pass priority.
                     let card_id = state.players[state.current_player].hand[0].id();
-                    state
-                        .input(state.current_player, PlayerAction::PlayLand(card_id))
-                        .unwrap();
+                    state.input(pid, PlayerAction::PlayLand(card_id)).unwrap();
+                    state.input(pid, PlayerAction::PassPriority).unwrap();
+                } else {
+                    state.input(pid, PlayerAction::PassPriority).unwrap();
                 }
             }
 
