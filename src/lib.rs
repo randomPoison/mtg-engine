@@ -90,7 +90,7 @@ impl State {
                 // TODO: The priority may not be the top frame, right?
                 state_stack
                     .last_mut()
-                    .and_then(|f| (f as &mut dyn Any).downcast_mut())
+                    .and_then(|f| (&mut **f as &mut dyn Any).downcast_mut())
             }
 
             match action {
@@ -163,8 +163,13 @@ impl State {
                         // If we've made our way back around to the last player to act (or the first
                         // player to get priority), then all players have passed priority and we are
                         // done with priority.
-                        todo!(
-                            "Remove the priority frame? What if its not at the top of the stack?"
+                        let frame = self
+                            .state_stack
+                            .pop()
+                            .expect("There's a priority frame on the stack");
+                        assert!(
+                            (&*frame as &dyn Any).is::<Priority>(),
+                            "Popped non-priority frame",
                         );
                     } else {
                         // Update the next player, and set last actor if this is the first player to
@@ -221,7 +226,7 @@ impl State {
     }
 }
 
-pub trait StackFrame: 'static + Any {
+pub trait StackFrame: 'static + Any + std::fmt::Debug {
     fn eval(&self, state: &mut State) -> Option<TickEvent>;
 }
 
@@ -239,11 +244,13 @@ pub trait Sequence: Sized {
     }
 }
 
+#[derive(Debug)]
 pub struct SequenceFrame<T> {
     seq: T,
     step: SequenceStep,
 }
 
+#[derive(Debug)]
 pub enum SequenceStep {
     Begin,
     Eval,
@@ -438,6 +445,7 @@ impl StackFrame for UntapEvent {
     }
 }
 
+#[derive(Debug)]
 pub struct MainPhase;
 
 impl StackFrame for MainPhase {
@@ -534,7 +542,7 @@ pub enum TickEvent {
     PlayCard(PlayerId, CardId),
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Priority {
     pub active: PlayerId,
     pub last_actor: Option<PlayerId>,
@@ -570,6 +578,7 @@ pub struct PlayerConfig {
     pub hand: Vec<CardDefId>,
 }
 
+#[derive(Debug)]
 pub enum PlayerAction {
     PassPriority,
     PlayLand(CardId),
