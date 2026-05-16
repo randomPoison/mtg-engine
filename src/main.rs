@@ -17,41 +17,44 @@ fn main() {
 fn run() -> Result<(), Box<dyn Error>> {
     let command = Command::parse();
 
-    if let Some(SubCommand::Start { force }) = &command.command {
-        if Path::new(GAME_FILE).exists() && !*force {
-            return Err(format!(
-                "{GAME_FILE} already exists; run `mtg start --force` to overwrite it"
-            )
-            .into());
+    match command.command {
+        SubCommand::Start { force } => {
+            if Path::new(GAME_FILE).exists() && !force {
+                return Err(format!(
+                    "{GAME_FILE} already exists; run `mtg start --force` to overwrite it"
+                )
+                .into());
+            }
+
+            let mut state = new_state();
+            run_until_input(&mut state);
+            save_state(&state)?;
         }
+        SubCommand::Action {
+            player,
+            action,
+            card_id,
+        } => {
+            let mut state = load_state()?;
+            let player = player.get() - 1;
+            if player >= state.players.len() {
+                return Err(format!(
+                    "invalid player ID {}; current game has {} players",
+                    player + 1,
+                    state.players.len()
+                )
+                .into());
+            }
 
-        let mut state = new_state();
-        run_until_input(&mut state);
-        save_state(&state)?;
-        return Ok(());
-    }
+            let action = to_player_action(action, card_id)?;
+            state
+                .input(player, action)
+                .map_err(|()| Box::<dyn Error>::from("failed to queue player action"))?;
 
-    let mut state = load_state()?;
-
-    if let Some(action) = command.action {
-        let player = command.player.expect("required by clap").get() - 1;
-        if player >= state.players.len() {
-            return Err(format!(
-                "invalid player ID {}; current game has {} players",
-                player + 1,
-                state.players.len()
-            )
-            .into());
+            run_until_input(&mut state);
+            save_state(&state)?;
         }
-
-        let action = command.to_player_action(action)?;
-        state
-            .input(player, action)
-            .map_err(|()| Box::<dyn Error>::from("failed to queue player action"))?;
     }
-
-    run_until_input(&mut state);
-    save_state(&state)?;
 
     Ok(())
 }
@@ -115,17 +118,7 @@ fn new_state() -> State {
 #[command(name = "mtg")]
 struct Command {
     #[command(subcommand)]
-    command: Option<SubCommand>,
-
-    /// One-based player ID.
-    #[arg(long, requires = "action")]
-    player: Option<NonZeroUsize>,
-
-    #[arg(long, requires = "player")]
-    action: Option<Action>,
-
-    #[arg(requires = "action")]
-    card_id: Option<u32>,
+    command: SubCommand,
 }
 
 #[derive(Subcommand)]
@@ -134,6 +127,14 @@ enum SubCommand {
         /// Overwrite an existing game.json.
         #[arg(long)]
         force: bool,
+    },
+    Action {
+        /// One-based player ID.
+        player: NonZeroUsize,
+
+        action: Action,
+
+        card_id: Option<u32>,
     },
 }
 
@@ -144,22 +145,19 @@ enum Action {
     PlayLand,
 }
 
-impl Command {
-    fn to_player_action(&self, action: Action) -> Result<PlayerAction, Box<dyn Error>> {
-        match action {
-            Action::Pass => {
-                if let Some(card_id) = self.card_id {
-                    Err(format!("Pass does not take a card ID; got {card_id}").into())
-                } else {
-                    Ok(PlayerAction::PassPriority)
-                }
+fn to_player_action(action: Action, card_id: Option<u32>) -> Result<PlayerAction, Box<dyn Error>> {
+    match action {
+        Action::Pass => {
+            if let Some(card_id) = card_id {
+                Err(format!("Pass does not take a card ID; got {card_id}").into())
+            } else {
+                Ok(PlayerAction::PassPriority)
             }
-            Action::PlayLand => {
-                let card_id = self
-                    .card_id
-                    .ok_or("PlayLand requires a card ID, e.g. `--action PlayLand 4`")?;
-                Ok(PlayerAction::PlayLand(CardId(card_id)))
-            }
+        }
+        Action::PlayLand => {
+            let card_id =
+                card_id.ok_or("PlayLand requires a card ID, e.g. `mtg action 1 PlayLand 4`")?;
+            Ok(PlayerAction::PlayLand(CardId(card_id)))
         }
     }
 }
