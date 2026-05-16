@@ -1,4 +1,4 @@
-use clap::{Parser, ValueEnum};
+use clap::{Parser, Subcommand, ValueEnum};
 use mtg_engine::{
     PlayerAction, PlayerConfig, State, TickEvent,
     card::{CardDefId, CardId, summon_cards_into_existence},
@@ -7,9 +7,31 @@ use std::{error::Error, fs, num::NonZeroUsize, path::Path};
 
 static GAME_FILE: &str = "game.json";
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() {
+    if let Err(err) = run() {
+        eprintln!("error: {err}");
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<(), Box<dyn Error>> {
     let command = Command::parse();
-    let mut state = load_or_new_state()?;
+
+    if let Some(SubCommand::Start { force }) = &command.command {
+        if Path::new(GAME_FILE).exists() && !*force {
+            return Err(format!(
+                "{GAME_FILE} already exists; run `mtg start --force` to overwrite it"
+            )
+            .into());
+        }
+
+        let mut state = new_state();
+        run_until_input(&mut state);
+        save_state(&state)?;
+        return Ok(());
+    }
+
+    let mut state = load_state()?;
 
     if let Some(action) = command.action {
         let player = command.player.expect("required by clap").get() - 1;
@@ -49,15 +71,15 @@ fn run_until_input(state: &mut State) {
     }
 }
 
-fn load_or_new_state() -> Result<State, Box<dyn Error>> {
-    if Path::new(GAME_FILE).exists() {
-        let game = fs::read_to_string(GAME_FILE)?;
-        let mut state: State = serde_json::from_str(&game)?;
-        state.card_defs = summon_cards_into_existence();
-        Ok(state)
-    } else {
-        Ok(new_state())
+fn load_state() -> Result<State, Box<dyn Error>> {
+    if !Path::new(GAME_FILE).exists() {
+        return Err(format!("no {GAME_FILE} found; run `mtg start` to create a new game").into());
     }
+
+    let game = fs::read_to_string(GAME_FILE)?;
+    let mut state: State = serde_json::from_str(&game)?;
+    state.card_defs = summon_cards_into_existence();
+    Ok(state)
 }
 
 fn save_state(state: &State) -> Result<(), Box<dyn Error>> {
@@ -92,14 +114,27 @@ fn new_state() -> State {
 #[derive(Parser)]
 #[command(name = "mtg")]
 struct Command {
+    #[command(subcommand)]
+    command: Option<SubCommand>,
+
     /// One-based player ID.
-    #[arg(long, required_unless_present = "action", requires = "action")]
+    #[arg(long, requires = "action")]
     player: Option<NonZeroUsize>,
 
     #[arg(long, requires = "player")]
     action: Option<Action>,
 
+    #[arg(requires = "action")]
     card_id: Option<u32>,
+}
+
+#[derive(Subcommand)]
+enum SubCommand {
+    Start {
+        /// Overwrite an existing game.json.
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 #[derive(Clone, Copy, ValueEnum)]
