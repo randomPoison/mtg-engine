@@ -1,4 +1,5 @@
 pub use cards::summon_cards_into_existence;
+use serde::{Deserialize, Serialize};
 
 #[path = "./cards.rs"]
 mod cards;
@@ -19,18 +20,18 @@ pub struct CardDef {
 }
 
 /// Just the index of the card definition within the global card definition list.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CardDefId(pub usize);
 
 /// Unique identifier for a card in play.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CardId(pub u32);
 
 /// A card as it appears in like the library or the hand.
 ///
 /// Does not implement [`Clone`] so that we can use ownership to model the
 /// uniqueness of each card, ensuring we never accidentally duplicate the card.
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Card(CardId, CardDefId);
 
 impl Card {
@@ -62,7 +63,7 @@ impl CardGen {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CardType {
     Land,
     Creature { subtypes: Vec<String> },
@@ -71,7 +72,7 @@ pub enum CardType {
     Enchantment,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum ManaCost {
     /// No mana cost, generally means the card can't be played normally.
     ///
@@ -90,7 +91,7 @@ pub enum ManaCost {
 
 /// CR 202.2a The five colors.
 /// CR 202.2b Colorless mana.
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum Color {
     White,
     Blue,
@@ -100,7 +101,7 @@ pub enum Color {
     Colorless,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum ColorCost {
     Single(Color),
     Hybrid(Color, Color),
@@ -108,24 +109,24 @@ pub enum ColorCost {
     Snow,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ActivatedAbility {
     pub cost: Vec<AbilityCost>,
     pub effect: AbilityEffect,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum AbilityCost {
     Mana(ManaCost),
     Tap(TargetCost),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum TargetCost {
     TargetSelf,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum AbilityEffect {
     GetMana { color: Color, quantity: u8 },
 }

@@ -1,12 +1,15 @@
 use crate::card::{
     Card, CardDef, CardDefId, CardGen, CardId, CardType, summon_cards_into_existence,
 };
+use serde::{Deserialize, Serialize};
 
 pub mod card;
 pub mod cards;
 
+#[derive(Serialize, Deserialize)]
 pub struct State {
     /// Global list of card definitions.
+    #[serde(skip)]
     pub card_defs: Vec<CardDef>,
 
     /// State data for all players.
@@ -228,7 +231,7 @@ impl State {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum StackFrame {
     Phase(SequenceFrame<Phase>),
     BeginStep(SequenceFrame<BeginStep>),
@@ -269,13 +272,13 @@ pub trait Sequence: Sized {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SequenceFrame<T> {
     seq: T,
     step: SequenceStep,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum SequenceStep {
     Begin,
     Eval,
@@ -356,7 +359,7 @@ impl From<SequenceFrame<EndStep>> for StackFrame {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Phase {
     Begin,
     PreCombat,
@@ -407,7 +410,7 @@ impl Sequence for Phase {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum BeginStep {
     Untap,
     Upkeep,
@@ -466,7 +469,7 @@ impl Sequence for BeginStep {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum UntapEvent {
     Phasing,
     DayNight,
@@ -497,7 +500,7 @@ impl Sequence for UntapEvent {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct MainPhase;
 
 impl From<MainPhase> for StackFrame {
@@ -516,7 +519,7 @@ impl MainPhase {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum CombatStep {
     Begin,
     DeclareAttackers,
@@ -544,7 +547,7 @@ impl Sequence for CombatStep {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum EndStep {
     End,
     Cleanup,
@@ -566,7 +569,7 @@ impl Sequence for EndStep {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum TickEvent {
     /// A player has gained priority.
     Priority(PlayerId),
@@ -596,7 +599,7 @@ pub enum TickEvent {
     PlayCard(PlayerId, CardId),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Priority {
     pub active: PlayerId,
     pub last_actor: Option<PlayerId>,
@@ -621,7 +624,7 @@ pub type PermanentId = ();
 
 type PlayerId = usize;
 
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct Player {
     /// Cards in the player's library, listed from bottom to top.
     pub library: Vec<Card>,
@@ -632,18 +635,19 @@ pub struct Player {
     pub command: Vec<Card>,
 }
 
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct PlayerConfig {
     pub library: Vec<CardDefId>,
     pub hand: Vec<CardDefId>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum PlayerAction {
     PassPriority,
     PlayLand(CardId),
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct PendingAction {
     pub player: PlayerId,
     pub action: PlayerAction,
