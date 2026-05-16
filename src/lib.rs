@@ -1,5 +1,3 @@
-use std::any::Any;
-
 use crate::card::{
     Card, CardDef, CardDefId, CardGen, CardId, CardType, summon_cards_into_existence,
 };
@@ -25,7 +23,7 @@ pub struct State {
     pub game_stack: Vec<()>,
 
     /// Internal state stack, which is, confusingly, different from the in-game stack.
-    pub state_stack: Vec<Box<dyn StackFrame>>,
+    pub state_stack: Vec<StackFrame>,
 
     /// Queue of pending actions, listed in reverse order.
     ///
@@ -86,11 +84,12 @@ impl State {
         {
             let player = self.players.get_mut(pid).expect("Invalid player ID");
 
-            fn get_priority(state_stack: &mut [Box<dyn StackFrame>]) -> Option<&mut Priority> {
+            fn get_priority(state_stack: &mut [StackFrame]) -> Option<&mut Priority> {
                 // TODO: The priority may not be the top frame, right?
-                state_stack
-                    .last_mut()
-                    .and_then(|f| (&mut **f as &mut dyn Any).downcast_mut())
+                match state_stack.last_mut() {
+                    Some(StackFrame::Priority(priority)) => Some(priority),
+                    _ => None,
+                }
             }
 
             match action {
@@ -168,7 +167,7 @@ impl State {
                             .pop()
                             .expect("There's a priority frame on the stack");
                         assert!(
-                            (&*frame as &dyn Any).is::<Priority>(),
+                            matches!(frame, StackFrame::Priority(_)),
                             "Popped non-priority frame",
                         );
                     } else {
@@ -217,23 +216,49 @@ impl State {
         Ok(())
     }
 
-    fn push(&mut self, frame: impl StackFrame) {
-        self.state_stack.push(Box::new(frame));
+    fn push(&mut self, frame: impl Into<StackFrame>) {
+        self.state_stack.push(frame.into());
     }
 
-    fn push_sequence<T: Sequence + StackFrame + Copy>(&mut self) {
+    fn push_sequence<T: Sequence + Copy>(&mut self)
+    where
+        StackFrame: From<SequenceFrame<T>>,
+    {
         self.push(SequenceFrame::<T>::begin());
     }
 }
 
-pub trait StackFrame: 'static + Any + std::fmt::Debug {
-    fn eval(&self, state: &mut State) -> Option<TickEvent>;
+#[derive(Debug)]
+pub enum StackFrame {
+    Phase(SequenceFrame<Phase>),
+    BeginStep(SequenceFrame<BeginStep>),
+    UntapEvent(SequenceFrame<UntapEvent>),
+    CombatStep(SequenceFrame<CombatStep>),
+    EndStep(SequenceFrame<EndStep>),
+    MainPhase(MainPhase),
+    Priority(Priority),
+}
+
+impl StackFrame {
+    fn eval(&self, state: &mut State) -> Option<TickEvent> {
+        match self {
+            StackFrame::Phase(frame) => frame.eval(state),
+            StackFrame::BeginStep(frame) => frame.eval(state),
+            StackFrame::UntapEvent(frame) => frame.eval(state),
+            StackFrame::MainPhase(frame) => frame.eval(state),
+            StackFrame::CombatStep(frame) => frame.eval(state),
+            StackFrame::EndStep(frame) => frame.eval(state),
+            StackFrame::Priority(frame) => frame.eval(state),
+        }
+    }
 }
 
 pub trait Sequence: Sized {
     const FIRST: Self;
 
     fn next(&self) -> Option<Self>;
+
+    fn eval(&self, state: &mut State) -> Option<TickEvent>;
 
     fn begin_event(&self) -> Option<TickEvent> {
         None
@@ -266,7 +291,10 @@ impl<T: Sequence> SequenceFrame<T> {
     }
 }
 
-impl<T: Sequence + StackFrame + Copy> StackFrame for SequenceFrame<T> {
+impl<T: Sequence + Copy> SequenceFrame<T>
+where
+    StackFrame: From<SequenceFrame<T>>,
+{
     fn eval(&self, state: &mut State) -> Option<TickEvent> {
         match self.step {
             SequenceStep::Begin => {
@@ -295,6 +323,36 @@ impl<T: Sequence + StackFrame + Copy> StackFrame for SequenceFrame<T> {
                 self.seq.end_event()
             }
         }
+    }
+}
+
+impl From<SequenceFrame<Phase>> for StackFrame {
+    fn from(frame: SequenceFrame<Phase>) -> Self {
+        Self::Phase(frame)
+    }
+}
+
+impl From<SequenceFrame<BeginStep>> for StackFrame {
+    fn from(frame: SequenceFrame<BeginStep>) -> Self {
+        Self::BeginStep(frame)
+    }
+}
+
+impl From<SequenceFrame<UntapEvent>> for StackFrame {
+    fn from(frame: SequenceFrame<UntapEvent>) -> Self {
+        Self::UntapEvent(frame)
+    }
+}
+
+impl From<SequenceFrame<CombatStep>> for StackFrame {
+    fn from(frame: SequenceFrame<CombatStep>) -> Self {
+        Self::CombatStep(frame)
+    }
+}
+
+impl From<SequenceFrame<EndStep>> for StackFrame {
+    fn from(frame: SequenceFrame<EndStep>) -> Self {
+        Self::EndStep(frame)
     }
 }
 
@@ -334,9 +392,7 @@ impl Sequence for Phase {
     fn end_event(&self) -> Option<TickEvent> {
         Some(TickEvent::EndPhase(*self))
     }
-}
 
-impl StackFrame for Phase {
     fn eval(&self, state: &mut State) -> Option<TickEvent> {
         state.current_phase = *self;
         match self {
@@ -377,9 +433,7 @@ impl Sequence for BeginStep {
     fn end_event(&self) -> Option<TickEvent> {
         Some(TickEvent::EndBeginStep(*self))
     }
-}
 
-impl StackFrame for BeginStep {
     fn eval(&self, state: &mut State) -> Option<TickEvent> {
         match self {
             BeginStep::Untap => {
@@ -432,9 +486,7 @@ impl Sequence for UntapEvent {
             Untap => None,
         }
     }
-}
 
-impl StackFrame for UntapEvent {
     fn eval(&self, _state: &mut State) -> Option<TickEvent> {
         match self {
             UntapEvent::Phasing => None,
@@ -448,7 +500,13 @@ impl StackFrame for UntapEvent {
 #[derive(Debug)]
 pub struct MainPhase;
 
-impl StackFrame for MainPhase {
+impl From<MainPhase> for StackFrame {
+    fn from(frame: MainPhase) -> Self {
+        Self::MainPhase(frame)
+    }
+}
+
+impl MainPhase {
     fn eval(&self, state: &mut State) -> Option<TickEvent> {
         state.push(Priority {
             active: state.current_player,
@@ -480,9 +538,7 @@ impl Sequence for CombatStep {
             End => None,
         }
     }
-}
 
-impl StackFrame for CombatStep {
     fn eval(&self, _state: &mut State) -> Option<TickEvent> {
         Some(TickEvent::CombatStep(*self))
     }
@@ -504,9 +560,7 @@ impl Sequence for EndStep {
             Cleanup => None,
         }
     }
-}
 
-impl StackFrame for EndStep {
     fn eval(&self, _state: &mut State) -> Option<TickEvent> {
         Some(TickEvent::EndStep(*self))
     }
@@ -548,7 +602,13 @@ pub struct Priority {
     pub last_actor: Option<PlayerId>,
 }
 
-impl StackFrame for Priority {
+impl From<Priority> for StackFrame {
+    fn from(frame: Priority) -> Self {
+        Self::Priority(frame)
+    }
+}
+
+impl Priority {
     fn eval(&self, state: &mut State) -> Option<TickEvent> {
         // Nothing happens on tick, we have to wait for a player to pass
         // priority or otherwise perform an action.
