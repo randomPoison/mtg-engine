@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use mtg_engine::{
-    PlayerAction, PlayerConfig, State, TickEvent,
+    PlayerAction, PlayerConfig, StackFrame, State, TickEvent,
     card::{CardDefId, CardId, summon_cards_into_existence},
 };
 use std::{error::Error, fs, num::NonZeroUsize, path::Path};
@@ -30,6 +30,30 @@ fn run() -> Result<(), Box<dyn Error>> {
             run_until_input(&mut state);
             save_state(&state)?;
         }
+
+        SubCommand::Show => {
+            let state = load_state()?;
+            println!(
+                "Player: {}, Phase: {:?}",
+                state.current_player + 1,
+                state.current_phase
+            );
+
+            if let StackFrame::Priority(priority) =
+                state.state_stack.last().expect("Stack can't be empty")
+            {
+                println!("  Player {} has priority", priority.active + 1);
+            }
+
+            for (pid, player) in state.players.iter().enumerate() {
+                println!("Player {} battlefield:", pid + 1);
+                for card in &player.battlefield {
+                    let def = &state.card_defs[card.def().0];
+                    println!("  {}", def.name);
+                }
+            }
+        }
+
         SubCommand::Action {
             player,
             action,
@@ -128,6 +152,7 @@ enum SubCommand {
         #[arg(long)]
         force: bool,
     },
+    Show,
     Action {
         /// One-based player ID.
         player: NonZeroUsize,
