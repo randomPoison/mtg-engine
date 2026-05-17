@@ -60,7 +60,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             println!("Player {}'s hand:", player);
             for card in hand {
                 let def = &state.card_defs[card.def().0];
-                println!("  {}", def.name);
+                println!("  {}: {}", card.id().0, def.name);
             }
         }
 
