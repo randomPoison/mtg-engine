@@ -54,6 +54,16 @@ fn run() -> Result<(), Box<dyn Error>> {
             }
         }
 
+        SubCommand::Hand { player } => {
+            let state = load_state()?;
+            let hand = &state.players[player.get() - 1].hand;
+            println!("Player {}'s hand:", player);
+            for card in hand {
+                let def = &state.card_defs[card.def().0];
+                println!("  {}", def.name);
+            }
+        }
+
         SubCommand::Action {
             player,
             action,
@@ -152,7 +162,14 @@ enum SubCommand {
         #[arg(long)]
         force: bool,
     },
+
     Show,
+
+    Hand {
+        /// One-based player ID.
+        player: NonZeroUsize,
+    },
+
     Action {
         /// One-based player ID.
         player: NonZeroUsize,
