@@ -33,11 +33,15 @@ fn run() -> Result<(), Box<dyn Error>> {
 
         SubCommand::Show => {
             let state = load_state()?;
-            println!(
+            print!(
                 "Player: {}, Phase: {:?}",
                 state.current_player + 1,
                 state.current_phase
             );
+            if let Some(step) = state.current_step() {
+                print!(", Step: {step}");
+            }
+            println!();
 
             if let StackFrame::Priority(priority) =
                 state.state_stack.last().expect("Stack can't be empty")
@@ -46,10 +50,12 @@ fn run() -> Result<(), Box<dyn Error>> {
             }
 
             for (pid, player) in state.players.iter().enumerate() {
-                println!("Player {} battlefield:", pid + 1);
-                for card in &player.battlefield {
-                    let def = &state.card_defs[card.def().0];
-                    println!("  {}", def.name);
+                if !player.battlefield.is_empty() {
+                    println!("Player {} battlefield:", pid + 1);
+                    for card in &player.battlefield {
+                        let def = &state.card_defs[card.def().0];
+                        println!("  {}", def.name);
+                    }
                 }
             }
         }

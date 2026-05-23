@@ -2,6 +2,7 @@ use crate::card::{
     Card, CardDef, CardDefId, CardGen, CardId, CardType, summon_cards_into_existence,
 };
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 pub mod card;
 pub mod cards;
@@ -219,6 +220,16 @@ impl State {
         Ok(())
     }
 
+    /// Returns the current step of the current phase, if there is one.
+    pub fn current_step(&self) -> Option<TurnStep> {
+        self.state_stack.iter().rev().find_map(|frame| match frame {
+            StackFrame::BeginStep(frame) => Some(TurnStep::Begin(frame.seq)),
+            StackFrame::CombatStep(frame) => Some(TurnStep::Combat(frame.seq)),
+            StackFrame::EndStep(frame) => Some(TurnStep::End(frame.seq)),
+            _ => None,
+        })
+    }
+
     fn push(&mut self, frame: impl Into<StackFrame>) {
         self.state_stack.push(frame.into());
     }
@@ -283,6 +294,23 @@ pub enum SequenceStep {
     Begin,
     Eval,
     End,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum TurnStep {
+    Begin(BeginStep),
+    Combat(CombatStep),
+    End(EndStep),
+}
+
+impl fmt::Display for TurnStep {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TurnStep::Begin(step) => write!(f, "{step:?}"),
+            TurnStep::Combat(step) => write!(f, "{step:?}"),
+            TurnStep::End(step) => write!(f, "{step:?}"),
+        }
+    }
 }
 
 impl<T: Sequence> SequenceFrame<T> {
