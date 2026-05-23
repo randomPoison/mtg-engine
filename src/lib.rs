@@ -19,9 +19,6 @@ pub struct State {
     /// The player whose turn is current in progress.
     pub current_player: PlayerId,
 
-    /// The phase of the current turn.
-    pub current_phase: Phase,
-
     /// The state of the in-game stack (not to be confused with internal stack,
     /// which is different).
     pub game_stack: Vec<()>,
@@ -69,7 +66,6 @@ impl State {
             card_defs,
             players,
             current_player,
-            current_phase: Phase::Begin,
             state_stack: vec![],
             actions: vec![],
             game_stack: vec![],
@@ -127,7 +123,7 @@ impl State {
                         "Can only play lands during your own turn",
                     );
                     assert!(
-                        self.current_phase.is_main(),
+                        current_phase(&self.state_stack).is_main(),
                         "Can only play lands during your main phase",
                     );
                     assert_eq!(
@@ -220,6 +216,10 @@ impl State {
         Ok(())
     }
 
+    pub fn current_phase(&self) -> Phase {
+        current_phase(&self.state_stack)
+    }
+
     /// Returns the current step of the current phase, if there is one.
     pub fn current_step(&self) -> Option<TurnStep> {
         self.state_stack.iter().rev().find_map(|frame| match frame {
@@ -240,6 +240,13 @@ impl State {
     {
         self.push(SequenceFrame::<T>::begin());
     }
+}
+
+fn current_phase(stack: &[StackFrame]) -> Phase {
+    let StackFrame::Phase(frame) = &stack[0] else {
+        panic!("First frame was not Phase");
+    };
+    frame.seq
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -425,7 +432,6 @@ impl Sequence for Phase {
     }
 
     fn eval(&self, state: &mut State) -> Option<TickEvent> {
-        state.current_phase = *self;
         match self {
             Phase::Begin => state.push_sequence::<BeginStep>(),
             Phase::PreCombat => state.push(MainPhase),

@@ -36,7 +36,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             print!(
                 "Player: {}, Phase: {:?}",
                 state.current_player + 1,
-                state.current_phase
+                state.current_phase()
             );
             if let Some(step) = state.current_step() {
                 print!(", Step: {step}");
@@ -105,7 +105,7 @@ fn run_until_input(state: &mut State) {
         println!(
             "turn: {}, phase: {:?}, event: {event:?}",
             state.current_player + 1,
-            state.current_phase,
+            state.current_phase(),
         );
 
         if matches!(event, TickEvent::Priority(_)) {
