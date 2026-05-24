@@ -36,7 +36,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             print!(
                 "Player: {}, Phase: {:?}",
                 state.current_player + 1,
-                state.current_phase()
+                state.current_phase(),
             );
             if let Some(step) = state.current_step() {
                 print!(", Step: {step}");

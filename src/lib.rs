@@ -31,6 +31,9 @@ pub struct State {
     /// Last item is the next action to process, so we can `pop` elements to
     /// process them in order.
     pub actions: Vec<PendingAction>,
+
+    /// All events that have occurred in the game so far.
+    pub history: Vec<TickEvent>,
 }
 
 impl State {
@@ -69,10 +72,19 @@ impl State {
             state_stack: vec![],
             actions: vec![],
             game_stack: vec![],
+            history: vec![],
         }
     }
 
     pub fn tick(&mut self) -> TickEvent {
+        let event = self.tick_inner();
+        self.history.push(event.clone());
+        event
+    }
+
+    // Just a little helper so that we can early return with an event without
+    // forgetting to add it to the history.
+    fn tick_inner(&mut self) -> TickEvent {
         // TODO: Ordering? Is the last element the one to do first? What does it
         // mean if there are multiple pending actions? Multiple players acting
         // at the same time? Wouldn't that require a priority shift, which
@@ -603,7 +615,7 @@ impl Sequence for EndStep {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TickEvent {
     /// A player has gained priority.
     Priority(PlayerId),
