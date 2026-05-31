@@ -1,8 +1,55 @@
-pub use cards::summon_cards_into_existence;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+pub use cards::summon_cards_into_existence;
 
 #[path = "./cards.rs"]
 mod cards;
+
+#[derive(Default)]
+pub struct CardsBuilder {
+    pub next_id: u32,
+    pub lookup: HashMap<CardId, CardDefId>,
+}
+
+impl CardsBuilder {
+    pub fn next(&mut self, did: CardDefId) -> Card {
+        let id = CardId(self.next_id);
+        self.next_id += 1;
+        self.lookup.insert(id, did);
+        Card(id)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct Cards {
+    /// Global list of card definitions.
+    #[serde(skip)]
+    pub card_defs: Vec<CardDef>,
+
+    pub card_def_lookup: HashMap<CardId, CardDefId>,
+}
+
+impl Cards {
+    pub fn new(builder: CardsBuilder) -> Self {
+        Self {
+            card_defs: summon_cards_into_existence(),
+            card_def_lookup: builder.lookup,
+        }
+    }
+
+    pub fn reload_card_defs(&mut self) {
+        self.card_defs = summon_cards_into_existence();
+    }
+
+    pub fn def_for(&self, cid: CardId) -> &CardDef {
+        let Some(did) = self.card_def_lookup.get(&cid) else {
+            panic!("No card def found for id {cid:?}");
+        };
+
+        &self.card_defs[did.0]
+    }
+}
 
 /// Like the info that appears on the card, the info about the card used in the game.
 #[derive(Debug)]
@@ -24,7 +71,7 @@ pub struct CardDef {
 pub struct CardDefId(pub usize);
 
 /// Unique identifier for a card in play.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct CardId(pub u32);
 
 /// A card as it appears in like the library or the hand.
@@ -32,34 +79,11 @@ pub struct CardId(pub u32);
 /// Does not implement [`Clone`] so that we can use ownership to model the
 /// uniqueness of each card, ensuring we never accidentally duplicate the card.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Card(CardId, CardDefId);
+pub struct Card(CardId);
 
 impl Card {
     pub fn id(&self) -> CardId {
         self.0
-    }
-
-    pub fn def(&self) -> CardDefId {
-        self.1
-    }
-}
-
-/// Generator for [`Card`] objects, ensuring that each card gets a unique ID.
-///
-/// Currently nothing prevents us from using multiple `CardGen`s to generate
-/// multiple [`Card`] objects with the same ID. So be sure to only make one
-/// `CardGen` per game state!
-pub struct CardGen(u32);
-
-impl CardGen {
-    pub fn new() -> Self {
-        Self(0)
-    }
-
-    pub fn next(&mut self, def: CardDefId) -> Card {
-        let id = self.0;
-        self.0 += 1;
-        Card(CardId(id), def)
     }
 }
 

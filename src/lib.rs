@@ -1,6 +1,4 @@
-use crate::card::{
-    Card, CardDef, CardDefId, CardGen, CardId, CardType, summon_cards_into_existence,
-};
+use crate::card::{Card, CardDefId, CardId, CardType, Cards, CardsBuilder};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -9,9 +7,7 @@ pub mod cards;
 
 #[derive(Serialize, Deserialize)]
 pub struct State {
-    /// Global list of card definitions.
-    #[serde(skip)]
-    pub card_defs: Vec<CardDef>,
+    pub cards: Cards,
 
     /// State data for all players.
     pub players: Vec<Player>,
@@ -42,13 +38,11 @@ impl State {
         // tick we wrap around to the first player.
         let current_player = players.len() - 1;
 
-        let card_defs = summon_cards_into_existence();
-
         // This is a mildly janky way of generating the unique IDs for cards, since we
         // have to sift through the initial hands and libraries for all players to
         // generate the IDs. This also doesn't tie cards to the player that owns them.
         // We could probably just build a map for that info, though.
-        let mut card_gen = CardGen::new();
+        let mut card_gen = CardsBuilder::default();
         let mut reify_cards =
             |dids: Vec<_>| dids.into_iter().map(|did| card_gen.next(did)).collect();
 
@@ -66,7 +60,7 @@ impl State {
             .collect();
 
         Self {
-            card_defs,
+            cards: Cards::new(card_gen),
             players,
             current_player,
             state_stack: vec![],
@@ -114,7 +108,7 @@ impl State {
                     // - ✅ Is it the player's main phase?
                     // - ✅ Does the player have priority?
                     // - ✅ Is stack empty?
-                    // - Have they already played a land this turn? Only one by default
+                    // - ✅ Have they already played a land this turn? Only one by default
                     //
                     // Would be nice to not panic on invalid inputs, but w/e
 
@@ -124,7 +118,7 @@ impl State {
                         .position(|card| card.id() == card_id)
                         .expect("Invalid card ID");
                     let card = &player.hand[card_index];
-                    let def = &self.card_defs[card.def().0];
+                    let def = self.cards.def_for(card.id());
                     assert!(
                         def.r#type.contains(&CardType::Land),
                         "Trying to play a non-land card {card:?} as a land"
@@ -148,7 +142,21 @@ impl State {
                         "Stack must be empty to play a land",
                     );
 
-                    // TODO: Check if we've already played a land this turn.
+                    // Check if we've already played a land this turn.
+                    let begin_turn_index = self
+                        .history
+                        .iter()
+                        .rposition(|event| matches!(event, TickEvent::BeginTurn(pid) if *pid == self.current_player))
+                        .expect("Current player's turn had to start at some point");
+                    let num_lands = self.history[begin_turn_index..]
+                        .iter()
+                        .filter_map(TickEvent::as_play_card)
+                        .filter(|&(_pid, cid)| {
+                            let def = self.cards.def_for(cid);
+                            def.r#type.contains(&CardType::Land)
+                        })
+                        .count();
+                    assert!(num_lands < 1, "Already played a land this turn");
 
                     // All validity checks have passed, time to put the land on the field.
                     let card = player.hand.remove(card_index);
@@ -643,6 +651,15 @@ pub enum TickEvent {
 
     /// A card entered the battlefield.
     PlayCard(PlayerId, CardId),
+}
+
+impl TickEvent {
+    pub fn as_play_card(&self) -> Option<(PlayerId, CardId)> {
+        match self {
+            &Self::PlayCard(pid, cid) => Some((pid, cid)),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

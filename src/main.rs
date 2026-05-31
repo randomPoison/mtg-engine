@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use mtg_engine::{
     PlayerAction, PlayerConfig, StackFrame, State, TickEvent,
-    card::{CardDefId, CardId, summon_cards_into_existence},
+    card::{CardDefId, CardId},
 };
 use std::{error::Error, fs, num::NonZeroUsize, path::Path};
 
@@ -53,7 +53,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                 if !player.battlefield.is_empty() {
                     println!("Player {} battlefield:", pid + 1);
                     for card in &player.battlefield {
-                        let def = &state.card_defs[card.def().0];
+                        let def = &state.cards.def_for(card.id());
                         println!("  {}", def.name);
                     }
                 }
@@ -65,7 +65,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             let hand = &state.players[player.get() - 1].hand;
             println!("Player {}'s hand:", player);
             for card in hand {
-                let def = &state.card_defs[card.def().0];
+                let def = &state.cards.def_for(card.id());
                 println!("  {}: {}", card.id().0, def.name);
             }
         }
@@ -121,7 +121,7 @@ fn load_state() -> Result<State, Box<dyn Error>> {
 
     let game = fs::read_to_string(GAME_FILE)?;
     let mut state: State = serde_json::from_str(&game)?;
-    state.card_defs = summon_cards_into_existence();
+    state.cards.reload_card_defs();
     Ok(state)
 }
 
