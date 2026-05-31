@@ -505,7 +505,7 @@ impl Sequence for BeginStep {
 
                 // Draw a card from the current player's library.
                 let Some(draw) = player.library.pop() else {
-                    todo!("Player ran out of cards to draw, they lose the game");
+                    return Some(TickEvent::LoseGame(state.current_player));
                 };
                 let draw_id = draw.id();
                 player.hand.push(draw);
@@ -651,6 +651,9 @@ pub enum TickEvent {
 
     /// A card entered the battlefield.
     PlayCard(PlayerId, CardId),
+
+    /// A player lost the game.
+    LoseGame(PlayerId),
 }
 
 impl TickEvent {
