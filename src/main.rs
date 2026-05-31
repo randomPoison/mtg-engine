@@ -187,7 +187,6 @@ enum SubCommand {
 }
 
 #[derive(Clone, Copy, ValueEnum)]
-#[value(rename_all = "PascalCase")]
 enum Action {
     Pass,
     PlayLand,
